@@ -1,0 +1,38 @@
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+  govet:
+    check-shadowing: true
+  gocyclo:
+    min-complexity: 10
+  maligned:
+    suggest-new: true
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 2
+    min-occurences: 2
+  gofmt:
+    simplify: true
+  misspell:
+    locale: US
+  lll:
+    line-length: 160
+  goimports:
+    local-prefixes: github.com/artur-sak13/gitmv
+  gocritic:
+    enabled-tags:
+      - performance
+      - style
+      - experimental
+    disabled-checks:
+      - wrapperFunc
+      - commentFormatting
+
+linters:
+  enable-all: true
+  disable:
+    - maligned
+    - dupl
+    - prealloc
+    - gochecknoglobals

@@ -1,0 +1,33 @@
+# github.com/genuinetools/pkg v0.0.0-20181022210355-2fcf164d37cb
+github.com/genuinetools/pkg/cli
+# github.com/golang/protobuf v1.2.0
+github.com/golang/protobuf/proto
+# github.com/google/go-github/v21 v21.0.0
+github.com/google/go-github/v21/github
+# github.com/google/go-querystring v1.0.0
+github.com/google/go-querystring/query
+# github.com/konsorten/go-windows-terminal-sequences v1.0.1
+github.com/konsorten/go-windows-terminal-sequences
+# github.com/sirupsen/logrus v1.3.0
+github.com/sirupsen/logrus
+# github.com/xanzy/go-gitlab v0.13.0
+github.com/xanzy/go-gitlab
+# golang.org/x/crypto v0.0.0-20190103213133-ff983b9c42bc
+golang.org/x/crypto/ssh/terminal
+# golang.org/x/net v0.0.0-20190110200230-915654e7eabc
+golang.org/x/net/context/ctxhttp
+golang.org/x/net/context
+# golang.org/x/oauth2 v0.0.0-20181106182150-f42d05182288
+golang.org/x/oauth2
+golang.org/x/oauth2/internal
+# golang.org/x/sys v0.0.0-20190109145017-48ac38b7c8cb
+golang.org/x/sys/unix
+golang.org/x/sys/windows
+# google.golang.org/appengine v1.3.0
+google.golang.org/appengine/urlfetch
+google.golang.org/appengine/internal
+google.golang.org/appengine/internal/urlfetch
+google.golang.org/appengine/internal/base
+google.golang.org/appengine/internal/datastore
+google.golang.org/appengine/internal/log
+google.golang.org/appengine/internal/remote_api

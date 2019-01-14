@@ -1,0 +1,56 @@
+language: go
+sudo: false
+go:
+  - 1.10.x
+before_install:
+  - go get golang.org/x/lint/golint
+  - go get honnef.co/go/tools/cmd/staticcheck
+jobs:
+  include:
+    - script: make all
+    - stage: Run Test Coverage
+      script: make cover
+      after_success: bash <(curl -s https://codecov.io/bash)
+    - stage: Build Release
+      script:
+        - make release
+        - echo "Deploying to GitHub releases ..."
+      deploy:
+        provider: releases
+        file:
+          - cross/gitmv-darwin-amd64
+          - cross/gitmv-darwin-amd64.md5
+          - cross/gitmv-darwin-amd64.sha256
+          - cross/gitmv-darwin-386
+          - cross/gitmv-darwin-386.md5
+          - cross/gitmv-darwin-386.sha256
+          - cross/gitmv-freebsd-amd64
+          - cross/gitmv-freebsd-amd64.md5
+          - cross/gitmv-freebsd-amd64.sha256
+          - cross/gitmv-freebsd-386
+          - cross/gitmv-freebsd-386.md5
+          - cross/gitmv-freebsd-386.sha256
+          - cross/gitmv-linux-arm
+          - cross/gitmv-linux-arm.md5
+          - cross/gitmv-linux-arm.sha256
+          - cross/gitmv-linux-arm64
+          - cross/gitmv-linux-arm64.md5
+          - cross/gitmv-linux-arm64.sha256
+          - cross/gitmv-linux-amd64
+          - cross/gitmv-linux-amd64.md5
+          - cross/gitmv-linux-amd64.sha256
+          - cross/gitmv-linux-386
+          - cross/gitmv-linux-386.md5
+          - cross/gitmv-linux-386.sha256
+          - cross/gitmv-solaris-amd64
+          - cross/gitmv-solaris-amd64.md5
+          - cross/gitmv-solaris-amd64.sha256
+          - cross/gitmv-windows-amd64
+          - cross/gitmv-windows-amd64.md5
+          - cross/gitmv-windows-amd64.sha256
+          - cross/gitmv-windows-386
+          - cross/gitmv-windows-386.md5
+          - cross/gitmv-windows-386.sha256
+        skip_cleanup: true
+        on:
+          tags: true
