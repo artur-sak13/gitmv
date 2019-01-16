@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/artur-sak13/gitmv/version"
@@ -21,10 +22,11 @@ import (
 
 // TODO: Get ssh keys for users
 // TODO: Abstract get* functions to make this DRY
-// TODO: Use GitHub import service to pull in repos
 // TODO: Process concurrently and wait for imports to complete
 // TODO: Add option to "dry-run" migration
 // TODO: Generate docs
+
+const TESTREPO string = "https://gitlab.twopoint.io/artur.sak/winaws"
 
 var (
 	githubToken string
@@ -98,13 +100,17 @@ func runCommand(ctx context.Context, args []string) error {
 		glClient: client,
 	}
 
-	page := 1
-	perPage := 100
-	logrus.Debugf("Getting projects...")
-	if err := m.getProjects(page, perPage); err != nil {
-		logrus.Errorf("Failed to get repos, %v\n", err)
+	if err := m.migrateRepo(ctx, TESTREPO); err != nil {
 		return err
 	}
+
+	// page := 1
+	// perPage := 100
+	// logrus.Debugf("Getting projects...")
+	// if err := m.getProjects(page, perPage); err != nil {
+	// 	logrus.Errorf("Failed to get repos, %v\n", err)
+	// 	return err
+	// }
 
 	return nil
 }
@@ -129,6 +135,38 @@ func newGitHubClient(ctx context.Context) *github.Client {
 type migrator struct {
 	ghClient *github.Client
 	glClient *gitlab.Client
+}
+
+func (m *migrator) newRepo(ctx context.Context, name, org, description string) (*github.Repository, error) {
+	repo := &github.Repository{
+		Name:        github.String(name),
+		Description: github.String(description),
+	}
+	r, _, err := m.ghClient.Repositories.Create(ctx, org, repo)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (m *migrator) migrateRepo(ctx context.Context, sourcerepo string) error {
+	parts := strings.SplitN(sourcerepo, "/", 2)
+	if len(parts) < 2 {
+		return fmt.Errorf("could not parse repo name into owner and repo for %s, got: %#v", sourcerepo, parts)
+	}
+	// Must create repository before running import
+	im := &github.Import{
+		VCSURL:      github.String(sourcerepo),
+		VCS:         github.String("git"),
+		VCSUsername: github.String(parts[0]),
+		VCSPassword: github.String(gitlabToken),
+	}
+	imprt, _, err := m.ghClient.Migrations.StartImport(ctx, "twopt", parts[1], im)
+	if err != nil {
+		return err
+	}
+	logrus.Infof("Importing %s", *imprt.Status)
+	return nil
 }
 
 func (m *migrator) getProjects(page, perPage int) error {
