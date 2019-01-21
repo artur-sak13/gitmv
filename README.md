@@ -8,6 +8,7 @@ A command line tool to migrate repos between GitLab and GitHub
 * [Installation](README.md#installation)
   * [Binaries](README.md#binaries)
   * [Via Go](README.md#via-go)
+
 * [Usage](README.md#usage)
 
 ## Installation

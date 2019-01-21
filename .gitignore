@@ -25,6 +25,8 @@ _testmain.go
 *.test
 .env
 
+NOTES.txt
+
 ###OSX###
 
 .DS_Store
