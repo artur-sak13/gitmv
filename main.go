@@ -15,7 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TODO: Create new structs only using data we need
 // TODO: Get ssh keys for users
 // TODO: Abstract get* functions to make this DRY
 // TODO: Process concurrently and wait for imports to complete
@@ -25,6 +24,7 @@ import (
 var (
 	githubToken string
 	gitlabToken string
+	gitlabUser  string
 	customURL   string
 	debug       bool
 )
@@ -40,6 +40,7 @@ func main() {
 	p.FlagSet = flag.NewFlagSet("global", flag.ExitOnError)
 	p.FlagSet.StringVar(&githubToken, "github-token", os.Getenv("GITHUB_TOKEN"), "GitHub API token (or env var GITHUB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabToken, "gitlab-token", os.Getenv("GITLAB_TOKEN"), "GitLab API token (or env var GITLAB_TOKEN)")
+	p.FlagSet.StringVar(&gitlabUser, "gitlab-user", os.Getenv("GITLAB_USER"), "GitLab Username")
 
 	p.FlagSet.StringVar(&customURL, "url", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
 	p.FlagSet.StringVar(&customURL, "u", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
@@ -89,13 +90,10 @@ func runCommand(ctx context.Context, args []string) error {
 		return err
 	}
 
-	ghClient := client.NewGitHubClient(ctx, githubToken)
-
-	page := 1
-	perPage := 100
+	ghClient := client.NewGitHubClient(ctx, githubToken, true)
 	logrus.Debugf("Getting projects...")
 
-	projects, err := glClient.GetProjects(page, perPage)
+	projects, err := glClient.GetProjects()
 
 	if err != nil {
 		logrus.Errorf("failed to get repos, %v\n", err)

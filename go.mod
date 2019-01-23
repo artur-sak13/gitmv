@@ -11,4 +11,6 @@ require (
 	golang.org/x/oauth2 v0.0.0-20181106182150-f42d05182288
 	golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4 // indirect
 	golang.org/x/sys v0.0.0-20190109145017-48ac38b7c8cb // indirect
+	gopkg.in/src-d/go-billy.v4 v4.2.1
+	gopkg.in/src-d/go-git.v4 v4.8.1
 )
