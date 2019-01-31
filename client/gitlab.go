@@ -1,6 +1,8 @@
 package client
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	gitlab "github.com/xanzy/go-gitlab"
@@ -59,28 +61,52 @@ type (
 		labels     []label
 	}
 
-	gitlabClient struct {
-		client    *gitlab.Client
-		token     string
-		customURL string
+	GitlabProvider struct {
+		Client  *gitlab.Client
+		Context context.Context
+
+		token string
+		URL   string
 	}
 )
 
-// TODO: Check if cleaning the data is worth the additional iterations
-// TODO: Handle group projects differently (map to GitHub teams)
-func NewGitlabClient(customURL, gitlabToken string) (*gitlabClient, error) {
+func NewGitlabProvider(url, gitlabToken string) (GitProvider, error) {
 	client := gitlab.NewClient(nil, gitlabToken)
-	if err := client.SetBaseURL(customURL); err != nil {
-		return nil, err
+	if !IsHosted(url) {
+		if err := client.SetBaseURL(url); err != nil {
+			return nil, err
+		}
 	}
-	return &gitlabClient{
-		client:    client,
-		token:     gitlabToken,
-		customURL: customURL,
+	return WithGitlabClient(url, gitlabToken, client)
+}
+
+func IsHosted(u string) bool {
+	u = strings.TrimSuffix(u, "/")
+	return u == "" || u == "https://gitlab.com" || u == "http://gitlab.com"
+}
+
+func WithGitlabClient(url, token string, client *gitlab.Client) (GitProvider, error) {
+	return &GitlabProvider{
+		Client: client,
+		token:  token,
+		URL:    url,
 	}, nil
 }
 
-func (c *gitlabClient) GetProjects() ([]*gitlab.Project, error) {
+func (g *GitlabProvider) ListRepositories() ([]*GitRepository, error) {
+	result, err := getRepositories(g.Client)
+	if err != nil {
+		return nil, err
+	}
+
+	var repos []*GitRepository
+	for _, p := range result {
+		repos = append(repos, fromGitlabProject(p))
+	}
+	return repos, nil
+}
+
+func getRepositories(c *gitlab.Client) ([]*gitlab.Project, error) {
 	opts := &gitlab.ListProjectsOptions{
 		Statistics: gitlab.Bool(true),
 		ListOptions: gitlab.ListOptions{
@@ -91,7 +117,7 @@ func (c *gitlabClient) GetProjects() ([]*gitlab.Project, error) {
 	var list []*gitlab.Project
 
 	for {
-		projects, resp, err := c.client.Projects.ListProjects(opts)
+		projects, resp, err := c.Projects.ListProjects(opts)
 
 		if err != nil {
 			return list, err
@@ -109,6 +135,7 @@ func (c *gitlabClient) GetProjects() ([]*gitlab.Project, error) {
 		return proj.Statistics.CommitCount != 0 && proj.ForkedFromProject == nil
 	})
 	return filtered, nil
+
 }
 
 func filter(projects []*gitlab.Project, fn func(p *gitlab.Project) bool) []*gitlab.Project {
@@ -121,7 +148,17 @@ func filter(projects []*gitlab.Project, fn func(p *gitlab.Project) bool) []*gitl
 	return prjs
 }
 
-func (c *gitlabClient) getIssues(pid int) ([]*gitlab.Issue, error) {
+func fromGitlabProject(p *gitlab.Project) *GitRepository {
+	return &GitRepository{
+		Name:     p.Name,
+		HTMLURL:  p.WebURL,
+		SSHURL:   p.SSHURLToRepo,
+		CloneURL: p.HTTPURLToRepo,
+		Fork:     p.ForkedFromProject != nil,
+	}
+}
+
+func (g *GitlabProvider) GetIssues(pid int, org, repo string) ([]*GitIssue, error) {
 	opts := gitlab.ListProjectIssuesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
@@ -131,9 +168,9 @@ func (c *gitlabClient) getIssues(pid int) ([]*gitlab.Issue, error) {
 	var list []*gitlab.Issue
 
 	for {
-		issues, resp, err := c.client.Issues.ListProjectIssues(pid, &opts)
+		issues, resp, err := g.Client.Issues.ListProjectIssues(pid, &opts)
 		if err != nil {
-			return list, err
+			return fromGitlabIssues(list, org, repo), err
 		}
 
 		list = append(list, issues...)
@@ -144,32 +181,60 @@ func (c *gitlabClient) getIssues(pid int) ([]*gitlab.Issue, error) {
 
 		opts.Page = resp.NextPage
 	}
-	return list, nil
+	return fromGitlabIssues(list, org, repo), nil
 }
 
-func (c *gitlabClient) issue(pid int, srcissue *gitlab.Issue) (*issue, error) {
-	comments := []comment{}
-	if srcissue.UserNotesCount != 0 {
-		var err error
-		comments, err = c.issueNotes(pid, srcissue.ID)
-		if err != nil {
-			return nil, err
-		}
+// func (g *GitlabProvider) issue(pid int, srcissue *gitlab.Issue) (*issue, error) {
+// 	comments := []comment{}
+// 	if srcissue.UserNotesCount != 0 {
+// 		var err error
+// 		comments, err = g.issueNotes(pid, srcissue.ID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 	}
+
+// 	return &issue{
+// 		number:       srcissue.ID,
+// 		title:        srcissue.Title,
+// 		numUserNotes: srcissue.UserNotesCount,
+// 		description:  srcissue.Description,
+// 		author:       srcissue.Author.Name,
+// 		state:        srcissue.State,
+// 		comments:     comments,
+// 	}, nil
+
+// }
+
+func fromGitlabIssues(issues []*gitlab.Issue, owner, repo string) []*GitIssue {
+	var result []*GitIssue
+
+	for _, v := range issues {
+		result = append(result, fromGitlabIssue(v, owner, repo))
+	}
+	return result
+}
+
+func fromGitlabIssue(issue *gitlab.Issue, owner, repo string) *GitIssue {
+	var labels []GitLabel
+	for _, v := range issue.Labels {
+		labels = append(labels, GitLabel{Name: v})
+	}
+	return &GitIssue{
+		Number:    &issue.IID,
+		Owner:     owner,
+		Repo:      repo,
+		Title:     issue.Title,
+		Body:      issue.Description,
+		Labels:    labels,
+		CreatedAt: issue.CreatedAt,
+		UpdatedAt: issue.UpdatedAt,
+		ClosedAt:  issue.ClosedAt,
 	}
 
-	return &issue{
-		number:       srcissue.ID,
-		title:        srcissue.Title,
-		numUserNotes: srcissue.UserNotesCount,
-		description:  srcissue.Description,
-		author:       srcissue.Author.Name,
-		state:        srcissue.State,
-		comments:     comments,
-	}, nil
-
 }
 
-func (c *gitlabClient) issueNotes(pid, issueNum int) ([]comment, error) {
+func (g *GitlabProvider) issueNotes(pid, issueNum int) ([]comment, error) {
 	opts := &gitlab.ListIssueNotesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
@@ -180,7 +245,7 @@ func (c *gitlabClient) issueNotes(pid, issueNum int) ([]comment, error) {
 	var comments []comment
 
 	for {
-		notes, resp, err := c.client.Notes.ListIssueNotes(pid, issueNum, opts, gitlab.WithSudo(2))
+		notes, resp, err := g.Client.Notes.ListIssueNotes(pid, issueNum, opts, gitlab.WithSudo(2))
 		if err != nil {
 			return comments, err
 		}
@@ -208,7 +273,7 @@ func toComments(notes []*gitlab.Note) []comment {
 	return comments
 }
 
-func (c *gitlabClient) getMilestones(pid int) ([]*gitlab.Milestone, error) {
+func (g *GitlabProvider) getMilestones(pid int) ([]*gitlab.Milestone, error) {
 	opts := gitlab.ListMilestonesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
@@ -219,7 +284,7 @@ func (c *gitlabClient) getMilestones(pid int) ([]*gitlab.Milestone, error) {
 	var list []*gitlab.Milestone
 
 	for {
-		milestones, resp, err := c.client.Milestones.ListMilestones(pid, &opts)
+		milestones, resp, err := g.Client.Milestones.ListMilestones(pid, &opts)
 		if err != nil {
 			return list, err
 		}
@@ -234,7 +299,7 @@ func (c *gitlabClient) getMilestones(pid int) ([]*gitlab.Milestone, error) {
 	return list, nil
 }
 
-func (c *gitlabClient) getLabels(pid int) ([]*gitlab.Label, error) {
+func (g *GitlabProvider) getLabels(pid int) ([]*gitlab.Label, error) {
 	opts := gitlab.ListLabelsOptions{
 		Page:    1,
 		PerPage: 100,
@@ -243,7 +308,7 @@ func (c *gitlabClient) getLabels(pid int) ([]*gitlab.Label, error) {
 	var list []*gitlab.Label
 
 	for {
-		labels, resp, err := c.client.Labels.ListLabels(pid, &opts)
+		labels, resp, err := g.Client.Labels.ListLabels(pid, &opts)
 		if err != nil {
 			return list, err
 		}
@@ -259,7 +324,15 @@ func (c *gitlabClient) getLabels(pid int) ([]*gitlab.Label, error) {
 	return list, nil
 }
 
-// func (c *gitlabClient) depaginate(opts *gitlab.ListOptions, call func() ([]interface{}, *gitlab.Response, error)) ([]interface{}, error) {
+func (g *GitlabProvider) Kind() string {
+	return "gitlab"
+}
+
+func (g *GitlabProvider) IsGitHub() bool {
+	return false
+}
+
+// func (c *GitlabProvider) depaginate(opts *gitlab.ListOptions, call func() ([]interface{}, *gitlab.Response, error)) ([]interface{}, error) {
 // 	var list []interface{}
 // 	wrapper := func() (*gitlab.Response, error) {
 // 		items, resp, err := call()

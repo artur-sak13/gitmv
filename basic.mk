@@ -73,7 +73,7 @@ lint: ## Verifies `golint` passes.
 .PHONY: test
 test: prebuild ## Runs the go tests.
 	@echo "+ $@"
-	@$(GO) test -rage -v -tags "$(BUILDTAGS) cgo" $(shell $(GO) list ./... | grep -v vendor) |  sed ''/PASS/s//$(shell printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(shell printf "\033[31mFAIL\033[0m")/''
+	@$(GO) test -race -v -tags "$(BUILDTAGS) cgo" $(shell $(GO) list ./... | grep -v vendor) |  sed ''/PASS/s//$(shell printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(shell printf "\033[31mFAIL\033[0m")/''
 
 .PHONY: vet
 vet: ## Verifies `go vet` passes.

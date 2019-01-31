@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/artur-sak13/gitmv/client"
 	"github.com/artur-sak13/gitmv/version"
 
 	"github.com/genuinetools/pkg/cli"
@@ -85,20 +84,20 @@ func runCommand(ctx context.Context, args []string) error {
 		}
 	}()
 
-	glClient, err := client.NewGitlabClient(customURL, gitlabToken)
-	if err != nil {
-		return err
-	}
+	// glClient, err := client.NewGitlabClient(customURL, gitlabToken)
+	// if err != nil {
+	// 	return err
+	// }
 
-	ghClient := client.NewGitHubClient(ctx, githubToken, true)
-	logrus.Debugf("Getting projects...")
+	// ghClient := client.NewGitHubClient(ctx, githubToken, true)
+	// logrus.Debugf("Getting projects...")
 
-	projects, err := glClient.GetProjects()
+	// projects, err := glClient.GetProjects()
 
-	if err != nil {
-		logrus.Errorf("failed to get repos, %v\n", err)
-		return err
-	}
+	// if err != nil {
+	// 	logrus.Errorf("failed to get repos, %v\n", err)
+	// 	return err
+	// }
 
 	return nil
 }
