@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/google/go-github/v21/github"
 	"github.com/sirupsen/logrus"
@@ -13,38 +12,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type (
-	issueService interface {
-		Create(ctx context.Context, owner string, repo string, issue *github.IssueRequest) (*github.Issue, *github.Response, error)
-		CreateComment(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error)
-		CreateLabel(ctx context.Context, owner, repo string, label *github.Label) (*github.Label, *github.Response, error)
-		CreateMilestone(ctx context.Context, owner, repo string, milestone *github.Milestone) (*github.Milestone, *github.Response, error)
-	}
+type GitHubProvider struct {
+	Client  *github.Client
+	Context context.Context
+	dryRun  bool
+	org     string
+}
 
-	repositoryService interface {
-		Create(ctx context.Context, org string, repo *github.Repository) (*github.Repository, *github.Response, error)
-	}
-
-	migrationService interface {
-		StartImport(ctx context.Context, owner, repo string, in *github.Import) (*github.Import, *github.Response, error)
-	}
-
-	teamsService interface {
-		CreateTeam(ctx context.Context, org string, team github.NewTeam) (*github.Team, *github.Response, error)
-	}
-
-	GitHubProvider struct {
-		issueService      issueService
-		repositoryService repositoryService
-		migrationService  migrationService
-		client            *github.Client
-		Context           context.Context
-		dryRun            bool
-		org               string
-	}
-)
-
-// TODO: See if groups should be mapped to teams or if all projects should be in org namespace
 func NewGitHubProvider(ctx context.Context, org, githubToken string, dryRun bool) *GitHubProvider {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: githubToken},
@@ -52,13 +26,10 @@ func NewGitHubProvider(ctx context.Context, org, githubToken string, dryRun bool
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 	return &GitHubProvider{
-		issueService:      client.Issues,
-		repositoryService: client.Repositories,
-		migrationService:  client.Migrations,
-		client:            client,
-		Context:           ctx,
-		dryRun:            dryRun,
-		org:               org,
+		Client:  client,
+		Context: ctx,
+		dryRun:  dryRun,
+		org:     org,
 	}
 }
 
@@ -69,7 +40,7 @@ func (c *GitHubProvider) CreateRepository(glproject *gitlab.Project) (*GitReposi
 		Description: github.String(glproject.Description),
 	}
 
-	r, _, err := c.repositoryService.Create(c.Context, c.org, repo)
+	r, _, err := c.Client.Repositories.Create(c.Context, c.org, repo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", c.org, glproject.Name, err)
 	}
@@ -87,29 +58,38 @@ func fromGithubRepo(repo *github.Repository) *GitRepository {
 }
 
 func (c *GitHubProvider) RepositoryExists(ctx context.Context, org, name string) bool {
-	_, r, err := c.client.Repositories.Get(ctx, org, name)
+	_, r, err := c.Client.Repositories.Get(ctx, org, name)
 	if err == nil {
 		return true
 	}
 	return r != nil && r.StatusCode == 404
 }
 
-func (c *GitHubProvider) createIssue(ctx context.Context, repo string, glIssue *gitlab.Issue, assignees []string) (*github.Issue, error) {
+func (c *GitHubProvider) CreateIssue(repo string, glIssue *GitIssue) (*GitIssue, error) {
+	labels := []string{}
+	for _, label := range glIssue.Labels {
+		name := label.Name
+		if name != "" {
+			labels = append(labels, name)
+		}
+	}
 	issue := &github.IssueRequest{
-		Title: &glIssue.Title,
-		Body:  &glIssue.Description,
+		Title:     &glIssue.Title,
+		Body:      &glIssue.Body,
+		Labels:    &labels,
+		Assignees: usersToString(glIssue.Assignees),
 	}
-	if len(glIssue.Labels) > 0 {
-		issue.Labels = &glIssue.Labels
-	}
-	if len(assignees) > 0 {
-		issue.Assignees = &assignees
-	}
-	result, _, err := c.issueService.Create(ctx, c.org, repo, issue)
+
+	result, _, err := c.Client.Issues.Create(c.Context, c.org, repo, issue)
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
+
+	number := 0
+	if result.Number != nil {
+		number = *result.Number
+	}
+	return c.fromGithubIssue(c.org, repo, number, result)
 }
 
 func (c *GitHubProvider) fromGithubIssue(org, name string, number int, i *github.Issue) (*GitIssue, error) {
@@ -155,6 +135,14 @@ func fromGithubUser(user *github.User) *GitUser {
 	}
 }
 
+func usersToString(users []GitUser) *[]string {
+	var result []string
+	for _, user := range users {
+		result = append(result, user.Login)
+	}
+	return &result
+}
+
 func fromGithubLabel(label *github.Label) GitLabel {
 	return GitLabel{
 		Name:  *label.Name,
@@ -163,18 +151,18 @@ func fromGithubLabel(label *github.Label) GitLabel {
 	}
 }
 
-func (c *GitHubProvider) createIssueComment(ctx context.Context, repo string, number int, note *gitlab.Note) (*github.IssueComment, error) {
-	comment := &github.IssueComment{
-		Body:      &note.Body,
-		CreatedAt: note.CreatedAt,
-		UpdatedAt: note.UpdatedAt,
+func (c *GitHubProvider) CreateIssueComment(repo string, number int, comment *gitlab.Note) error {
+	issueComment := &github.IssueComment{
+		Body:      &comment.Body,
+		CreatedAt: comment.CreatedAt,
+		UpdatedAt: comment.UpdatedAt,
 	}
 
-	result, _, err := c.issueService.CreateComment(ctx, c.org, repo, number, comment)
+	_, _, err := c.Client.Issues.CreateComment(c.Context, c.org, repo, number, issueComment)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return result, nil
+	return nil
 }
 
 func (c *GitHubProvider) createLabel(ctx context.Context, repo string, glLabel *gitlab.Label) (*github.Label, error) {
@@ -184,26 +172,7 @@ func (c *GitHubProvider) createLabel(ctx context.Context, repo string, glLabel *
 		Description: &glLabel.Description,
 	}
 
-	result, _, err := c.issueService.CreateLabel(ctx, c.org, repo, label)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (c *GitHubProvider) createMilestone(ctx context.Context, repo string, glMilestone *gitlab.Milestone) (*github.Milestone, error) {
-	var isotime time.Time = time.Time(*glMilestone.DueDate)
-
-	milestone := &github.Milestone{
-		Title:       &glMilestone.Title,
-		Description: &glMilestone.Description,
-		State:       &glMilestone.State,
-		CreatedAt:   glMilestone.CreatedAt,
-		UpdatedAt:   glMilestone.UpdatedAt,
-		DueOn:       &isotime,
-	}
-
-	result, _, err := c.issueService.CreateMilestone(ctx, c.org, repo, milestone)
+	result, _, err := c.Client.Issues.CreateLabel(ctx, c.org, repo, label)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +192,7 @@ func (c *GitHubProvider) migrateRepo(ctx context.Context, org, gitlabToken, sour
 		VCSUsername: github.String(strings.Split(u.RequestURI(), "/")[1]),
 		VCSPassword: github.String(gitlabToken),
 	}
-	imprt, _, err := c.migrationService.StartImport(ctx, org, u.RequestURI(), im)
+	imprt, _, err := c.Client.Migrations.StartImport(ctx, org, u.RequestURI(), im)
 	if err != nil {
 		return err
 	}

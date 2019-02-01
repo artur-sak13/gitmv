@@ -37,6 +37,13 @@ type (
 		Assignees     []GitUser
 	}
 
+	GitIssueComment struct {
+		Author    string
+		Body      string
+		CreatedAt *time.Time
+		UpdatedAt *time.Time
+	}
+
 	GitUser struct {
 		URL       string
 		Login     string
