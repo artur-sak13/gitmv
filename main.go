@@ -14,8 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TODO: Implement rest of cli
 // TODO: Get ssh keys for users
-// TODO: Abstract get* functions to make this DRY
 // TODO: Process concurrently and wait for imports to complete
 // TODO: Add option to "dry-run" migration
 // TODO: Generate docs
