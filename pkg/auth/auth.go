@@ -22,12 +22,14 @@
 
 package auth
 
+// ID
 type ID struct {
 	URL   string
 	Token string
 	Owner string
 }
 
+// NewAuthID
 func NewAuthID(url, token, owner string) *ID {
 	return &ID{
 		URL:   url,

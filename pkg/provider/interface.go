@@ -22,6 +22,7 @@
 
 package provider
 
+// GitProvider
 type GitProvider interface {
 	// Create methods
 	CreateRepository(name, description string) (*GitRepository, error)

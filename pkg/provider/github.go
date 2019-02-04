@@ -42,6 +42,7 @@ type GithubProvider struct {
 	DryRun bool
 }
 
+// NewGithubProvider
 func NewGithubProvider(ctx context.Context, id *auth.ID, dryRun bool) (GitProvider, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: id.Token},
@@ -51,6 +52,7 @@ func NewGithubProvider(ctx context.Context, id *auth.ID, dryRun bool) (GitProvid
 	return WithGithubClient(ctx, client, id, dryRun), nil
 }
 
+// WithGithubClient
 func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID, dryRun bool) GitProvider {
 	return &GithubProvider{
 		Client:  client,
@@ -60,6 +62,7 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID, d
 	}
 }
 
+// CreateRepository
 func (g *GithubProvider) CreateRepository(name, description string) (*GitRepository, error) {
 	repo := &github.Repository{
 		Name:        github.String(name),
@@ -84,6 +87,7 @@ func fromGithubRepo(repo *github.Repository) *GitRepository {
 	}
 }
 
+// RepositoryExists
 func (g *GithubProvider) RepositoryExists(name string) bool {
 	_, r, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
 	if err == nil {
@@ -92,6 +96,7 @@ func (g *GithubProvider) RepositoryExists(name string) bool {
 	return r != nil && r.StatusCode == 404
 }
 
+// CreateIssue
 func (g *GithubProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, error) {
 	issueRequest := &github.IssueRequest{
 		Title:     &issue.Title,
@@ -147,6 +152,7 @@ func fromGithubUser(user *github.User) *GitUser {
 	}
 }
 
+// CreateIssueComment
 func (g *GithubProvider) CreateIssueComment(repo string, number int, comment *GitIssueComment) error {
 	issueComment := &github.IssueComment{
 		User:      &github.User{Email: &comment.User.Email},
@@ -161,6 +167,7 @@ func (g *GithubProvider) CreateIssueComment(repo string, number int, comment *Gi
 	return nil
 }
 
+// CreateLabel
 func (g *GithubProvider) CreateLabel(repo string, srcLabel *GitLabel) (*GitLabel, error) {
 	label := &github.Label{
 		Name:        &srcLabel.Name,
@@ -183,6 +190,7 @@ func fromGithubLabel(label *github.Label) *GitLabel {
 	}
 }
 
+// MigrateRepo
 func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) error {
 	u, err := url.Parse(repo.CloneURL)
 	if err != nil {
@@ -204,21 +212,25 @@ func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) error {
 	return nil
 }
 
+// GetRepositories
 func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
+// GetIssues
 func (g *GithubProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
+// GetComments
 func (g *GithubProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
+// GetLabels
 func (g *GithubProvider) GetLabels(pid int) ([]*GitLabel, error) {
 	// TODO: Implement
 	return nil, nil

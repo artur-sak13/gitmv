@@ -28,11 +28,13 @@ import (
 	"github.com/artur-sak13/gitmv/pkg/provider"
 )
 
+// Migrator
 type Migrator struct {
 	Src  provider.GitProvider
 	Dest provider.GitProvider
 }
 
+// NewMigrator
 func NewMigrator(src, dest provider.GitProvider) *Migrator {
 	return &Migrator{
 		Src:  src,
@@ -40,6 +42,7 @@ func NewMigrator(src, dest provider.GitProvider) *Migrator {
 	}
 }
 
+// Run
 // TODO: Process concurrently and wait for imports to complete
 func (m *Migrator) Run() error {
 	_, err := m.Src.GetRepositories()

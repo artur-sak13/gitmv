@@ -25,6 +25,7 @@ package provider
 import "time"
 
 type (
+	// GitRepository
 	GitRepository struct {
 		Name     string
 		HTMLURL  string
@@ -33,7 +34,7 @@ type (
 		Fork     bool
 		PID      int
 	}
-
+	// GitIssue
 	GitIssue struct {
 		Owner     string
 		Repo      string
@@ -48,20 +49,20 @@ type (
 		User      *GitUser
 		Assignees []GitUser
 	}
-
+	// GitIssueComment
 	GitIssueComment struct {
 		User      GitUser
 		Body      string
 		CreatedAt time.Time
 		UpdatedAt time.Time
 	}
-
+	// GitUser
 	GitUser struct {
 		Login string
 		Name  string
 		Email string
 	}
-
+	// GitLabel
 	GitLabel struct {
 		Name        string
 		Color       string
@@ -69,6 +70,7 @@ type (
 	}
 )
 
+// ToGitLabels
 func ToGitLabels(names []string) []GitLabel {
 	answer := []GitLabel{}
 	for _, n := range names {
@@ -77,6 +79,7 @@ func ToGitLabels(names []string) []GitLabel {
 	return answer
 }
 
+// ToGitLabelStringSlice
 func ToGitLabelStringSlice(labels []GitLabel) *[]string {
 	labelStrings := []string{}
 	for _, label := range labels {
@@ -88,6 +91,7 @@ func ToGitLabelStringSlice(labels []GitLabel) *[]string {
 	return &labelStrings
 }
 
+// UserToString
 func UsersToString(users []GitUser) *[]string {
 	var result []string
 	for _, user := range users {

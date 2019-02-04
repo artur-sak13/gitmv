@@ -31,6 +31,7 @@ import (
 	gitlab "github.com/xanzy/go-gitlab"
 )
 
+// GitlabProvider
 type GitlabProvider struct {
 	Client  *gitlab.Client
 	Context context.Context
@@ -345,16 +346,19 @@ func lastPage(resp *gitlab.Response) bool {
 	return resp == nil || resp.CurrentPage >= resp.TotalPages || resp.NextPage == 0
 }
 
+// CreateRepository
 func (g *GitlabProvider) CreateRepository(name, description string) (*GitRepository, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
+// CreateIssue
 func (g *GitlabProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
+// CreateIssueComment
 func (g *GitlabProvider) CreateIssueComment(repo string, number int, comment *GitIssueComment) error {
 	// TODO: Implement
 	return nil
