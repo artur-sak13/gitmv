@@ -1,8 +1,32 @@
+// The MIT License (MIT)
+//
+// Copyright (c) 2019 Artur Sak
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 package provider
 
 import (
 	"context"
 	"strings"
+
+	"github.com/artur-sak13/gitmv/pkg/auth"
 
 	gitlab "github.com/xanzy/go-gitlab"
 )
@@ -10,43 +34,48 @@ import (
 type GitlabProvider struct {
 	Client  *gitlab.Client
 	Context context.Context
-
-	token string
-	URL   string
+	ID      *auth.ID
+	DryRun  bool
 }
 
-func NewGitlabProvider(url, gitlabToken string) (GitProvider, error) {
-	client := gitlab.NewClient(nil, gitlabToken)
-	if !IsHosted(url) {
-		if err := client.SetBaseURL(url); err != nil {
+// NewGitlabProvider creates a new GitLab client which implements the provider interface
+func NewGitlabProvider(id *auth.ID, dryRun bool) (GitProvider, error) {
+	client := gitlab.NewClient(nil, id.Token)
+	if !IsHosted(id.URL) {
+		if err := client.SetBaseURL(id.URL); err != nil {
 			return nil, err
 		}
 	}
-	return WithGitlabClient(url, gitlabToken, client)
+	return WithGitlabClient(id, client, dryRun), nil
 }
 
+// IsHosted checks if the specified URL is a Git SaaS provider
 func IsHosted(u string) bool {
 	u = strings.TrimSuffix(u, "/")
 	return u == "" || u == "https://gitlab.com" || u == "http://gitlab.com"
 }
 
-func WithGitlabClient(url, token string, client *gitlab.Client) (GitProvider, error) {
+// WithGitlabClient creates a new GitProvider with a Gitlab client
+// This function is exported to create mock clients in tests
+func WithGitlabClient(id *auth.ID, client *gitlab.Client, dryRun bool) GitProvider {
 	return &GitlabProvider{
 		Client: client,
-		token:  token,
-		URL:    url,
-	}, nil
+		ID:     id,
+		DryRun: dryRun,
+	}
 }
 
-func (g *GitlabProvider) ListRepositories() ([]*GitRepository, error) {
+// GetRepositories gets a list of all repositories in the target Gitlab instance
+// For >100 repositories this _depaginates_ the responses and appends them to one slice
+func (g *GitlabProvider) GetRepositories() ([]*GitRepository, error) {
 	result, err := getRepositories(g.Client)
 	if err != nil {
 		return nil, err
 	}
 
 	var repos []*GitRepository
-	for _, p := range result {
-		repos = append(repos, fromGitlabProject(p))
+	for _, project := range result {
+		repos = append(repos, fromGitlabProject(project))
 	}
 	return repos, nil
 }
@@ -83,17 +112,41 @@ func getRepositories(c *gitlab.Client) ([]*gitlab.Project, error) {
 
 }
 
-func fromGitlabProject(p *gitlab.Project) *GitRepository {
+func fromGitlabProject(project *gitlab.Project) *GitRepository {
 	return &GitRepository{
-		Name:     p.Name,
-		HTMLURL:  p.WebURL,
-		SSHURL:   p.SSHURLToRepo,
-		CloneURL: p.HTTPURLToRepo,
-		Fork:     p.ForkedFromProject != nil,
+		Name:     project.Name,
+		HTMLURL:  project.WebURL,
+		SSHURL:   project.SSHURLToRepo,
+		CloneURL: project.HTTPURLToRepo,
+		Fork:     project.ForkedFromProject != nil,
+		PID:      project.ID,
 	}
 }
 
-func (g *GitlabProvider) GetIssues(pid int, org, repo string) ([]*GitIssue, error) {
+// GetComments retrieves a full list of Issues for a project
+// For >100 issues this _depaginates_ the responses and appends them to one slice
+func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
+	result, err := getIssues(g.Client, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*GitIssue
+
+	for _, issue := range result {
+		gitissue := fromGitlabIssue(issue)
+		gitissue.Owner = g.ID.Owner
+		gitissue.Repo = repo
+		gitissue.User = g.GetUserByID(issue.Author.ID)
+		gitissue.Assignees = g.getAssignees(issue.Assignees)
+
+		issues = append(issues, gitissue)
+	}
+
+	return issues, nil
+}
+
+func getIssues(c *gitlab.Client, pid int) ([]*gitlab.Issue, error) {
 	opts := gitlab.ListProjectIssuesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
@@ -103,9 +156,9 @@ func (g *GitlabProvider) GetIssues(pid int, org, repo string) ([]*GitIssue, erro
 	var list []*gitlab.Issue
 
 	for {
-		issues, resp, err := g.Client.Issues.ListProjectIssues(pid, &opts)
+		issues, resp, err := c.Issues.ListProjectIssues(pid, &opts)
 		if err != nil {
-			return fromGitlabIssues(list, org, repo), err
+			return list, err
 		}
 
 		list = append(list, issues...)
@@ -116,34 +169,56 @@ func (g *GitlabProvider) GetIssues(pid int, org, repo string) ([]*GitIssue, erro
 
 		opts.Page = resp.NextPage
 	}
-	return fromGitlabIssues(list, org, repo), nil
+	return list, nil
 }
 
-func fromGitlabIssues(issues []*gitlab.Issue, owner, repo string) []*GitIssue {
-	var result []*GitIssue
-
-	for _, v := range issues {
-		result = append(result, fromGitlabIssue(v, owner, repo))
-	}
-	return result
-}
-
-func fromGitlabIssue(issue *gitlab.Issue, owner, repo string) *GitIssue {
+func fromGitlabIssue(issue *gitlab.Issue) *GitIssue {
 	return &GitIssue{
-		Number:    &issue.IID,
-		Owner:     owner,
-		Repo:      repo,
+		Number:    issue.IID,
 		Title:     issue.Title,
 		Body:      issue.Description,
+		State:     issue.State,
 		Labels:    ToGitLabels(issue.Labels),
-		State:     &issue.State,
-		CreatedAt: issue.CreatedAt,
-		UpdatedAt: issue.UpdatedAt,
-		ClosedAt:  issue.ClosedAt,
+		CreatedAt: *issue.CreatedAt,
+		UpdatedAt: *issue.UpdatedAt,
+		ClosedAt:  *issue.ClosedAt,
 	}
-
 }
 
+func (g *GitlabProvider) getAssignees(assignees []*gitlab.IssueAssignee) []GitUser {
+	users := []GitUser{}
+	for _, assignee := range assignees {
+		user := g.GetUserByID(assignee.ID)
+		if user != nil {
+			users = append(users, *user)
+		}
+
+	}
+	return users
+}
+
+// GetUserByID looks up a user by ID and lifts them to the GitUser type
+func (g *GitlabProvider) GetUserByID(uid int) *GitUser {
+	user, _, err := g.Client.Users.GetUser(uid, gitlab.WithSudo(2))
+	if err != nil {
+		return nil
+	}
+	return fromGitlabUser(user)
+}
+
+func fromGitlabUser(user *gitlab.User) *GitUser {
+	if user == nil {
+		return nil
+	}
+	return &GitUser{
+		Login: user.Username,
+		Name:  user.Name,
+		Email: user.Email,
+	}
+}
+
+// GetComments retrieves a full list of comments for a project issue
+// For >100 comments this _depaginates_ the responses and appends them to one slice
 func (g *GitlabProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, error) {
 	opts := &gitlab.ListIssueNotesOptions{
 		ListOptions: gitlab.ListOptions{
@@ -184,12 +259,13 @@ func fromGitlabComment(note *gitlab.Note) *GitIssueComment {
 			Email: note.Author.Email,
 		},
 		Body:      note.Body,
-		CreatedAt: note.CreatedAt,
-		UpdatedAt: note.UpdatedAt,
+		CreatedAt: *note.CreatedAt,
+		UpdatedAt: *note.UpdatedAt,
 	}
 }
 
-func (g *GitlabProvider) GetLabels(pid int) ([]*gitlab.Label, error) {
+// GetLabels retrieves a full list of labels associated with a project
+func (g *GitlabProvider) GetLabels(pid int) ([]*GitLabel, error) {
 	opts := gitlab.ListLabelsOptions{
 		Page:    1,
 		PerPage: 100,
@@ -200,7 +276,7 @@ func (g *GitlabProvider) GetLabels(pid int) ([]*gitlab.Label, error) {
 	for {
 		labels, resp, err := g.Client.Labels.ListLabels(pid, &opts)
 		if err != nil {
-			return list, err
+			return fromGitlabLabels(list), err
 		}
 
 		list = append(list, labels...)
@@ -211,7 +287,7 @@ func (g *GitlabProvider) GetLabels(pid int) ([]*gitlab.Label, error) {
 
 		opts.Page = resp.NextPage
 	}
-	return list, nil
+	return fromGitlabLabels(list), nil
 }
 
 func fromGitlabLabels(labels []*gitlab.Label) []*GitLabel {
@@ -228,14 +304,6 @@ func fromGitlabLabel(label *gitlab.Label) *GitLabel {
 		Color:       label.Color,
 		Description: label.Description,
 	}
-}
-
-func (g *GitlabProvider) Kind() string {
-	return "gitlab"
-}
-
-func (g *GitlabProvider) IsGitHub() bool {
-	return false
 }
 
 // func (c *GitlabProvider) depaginate(opts *gitlab.ListOptions, call func() ([]interface{}, *gitlab.Response, error)) ([]interface{}, error) {
@@ -275,4 +343,19 @@ func filter(projects []*gitlab.Project, fn func(p *gitlab.Project) bool) []*gitl
 
 func lastPage(resp *gitlab.Response) bool {
 	return resp == nil || resp.CurrentPage >= resp.TotalPages || resp.NextPage == 0
+}
+
+func (g *GitlabProvider) CreateRepository(name, description string) (*GitRepository, error) {
+	// TODO: Implement
+	return nil, nil
+}
+
+func (g *GitlabProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, error) {
+	// TODO: Implement
+	return nil, nil
+}
+
+func (g *GitlabProvider) CreateIssueComment(repo string, number int, comment *GitIssueComment) error {
+	// TODO: Implement
+	return nil
 }

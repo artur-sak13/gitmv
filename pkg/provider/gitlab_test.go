@@ -1,3 +1,25 @@
+// The MIT License (MIT)
+//
+// Copyright (c) 2019 Artur Sak
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 package provider_test
 
 import (
@@ -7,6 +29,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/artur-sak13/gitmv/pkg/auth"
 	"github.com/artur-sak13/gitmv/pkg/provider"
 
 	"gotest.tools/assert"
@@ -19,7 +42,7 @@ const (
 	gitlabUserName    = "tester"
 	gitlabOrgName     = "testorg"
 	gitlabProjectName = "test-project"
-	gitlabProjectID   = "8675309"
+	// gitlabProjectID   = "8675309"
 )
 
 type GitlabProviderSuite struct {
@@ -47,10 +70,12 @@ func setup(s *GitlabProviderSuite) (*http.ServeMux, *httptest.Server, *provider.
 	server := httptest.NewServer(mux)
 
 	c := gitlab.NewClient(nil, "")
-	c.SetBaseURL(server.URL)
+	_ = c.SetBaseURL(server.URL)
+
+	id := auth.NewAuthID(server.URL, "test-token", gitlabOrgName)
 
 	// Gitlab provider that we want to test
-	prov, _ := provider.WithGitlabClient(server.URL, "test", c)
+	prov := provider.WithGitlabClient(id, c, false)
 
 	return mux, server, prov.(*provider.GitlabProvider)
 }
@@ -60,14 +85,14 @@ func configureGitlabMock(s *GitlabProviderSuite, mux *http.ServeMux) {
 		src, err := ioutil.ReadFile("test_data/gitlab/projects.json")
 
 		s.Require().Nil(err)
-		w.Write(src)
+		_, _ = w.Write(src)
 	})
 
 	mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%d/issues", 4), func(w http.ResponseWriter, r *http.Request) {
 		src, err := ioutil.ReadFile("test_data/gitlab/issues.json")
 
 		s.Require().Nil(err)
-		w.Write(src)
+		_, _ = w.Write(src)
 	})
 
 	// gitlabRouter := testutil.Router{
@@ -81,50 +106,61 @@ func configureGitlabMock(s *GitlabProviderSuite, mux *http.ServeMux) {
 }
 
 func TestIsHosted(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
-		testDescription string
-		input           string
-		want            bool
+		name  string
+		input string
+		want  bool
 	}{
 		{
-			"Hosted-with-HTTPS",
+			"test hosted with https",
 			"https://gitlab.com",
 			true,
 		}, {
-			"Hosted-with-HTTP",
+			"test hosted with http",
 			"http://gitlab.com",
 			true,
 		}, {
-			"Self-hosted-with-HTTPS",
+			"test self hosted with https",
 			"https://gitlab.example.com",
 			false,
 		}, {
-			"Self-hosted-with-HTTP",
+			"test self hosted with http",
 			"http://gitlab.example.com",
 			false,
 		}, {
-			"Self-hosted-with-port",
+			"test self hosted with port",
 			"http://gitlab.example.com:8080",
 			false,
 		}, {
-			"Self-hosted-with-path",
+			"test self hosted with a path",
 			"http://gitlab.example.com/somepath",
+			false,
+		}, {
+			"test empty url",
+			"",
+			true,
+		}, {
+			"test unexpected input",
+			"\nsomethingsomething\n--;",
+			false,
+		}, {
+			"test comment escape characters",
+			`/\/\*/ /\*\//`,
 			false,
 		},
 	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.testDescription, func(t *testing.T) {
-			result := provider.IsHosted(test.input)
-			assert.Equal(t, test.want, result)
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			result := provider.IsHosted(tt.input)
+			assert.Equal(t, tt.want, result)
 		})
 	}
 }
 
 func (s *GitlabProviderSuite) TestListRepositories() {
 	require := s.Require()
-	scenarios := []struct {
+	tests := []struct {
 		testDescription  string
 		org              string
 		expectedRepoName string
@@ -155,27 +191,26 @@ func (s *GitlabProviderSuite) TestListRepositories() {
 			"https://gitlab.com/testorg/orgproject",
 		},
 	}
-	for i, scen := range scenarios {
-		repositories, err := s.provider.ListRepositories()
+	for i, tt := range tests {
+		repositories, err := s.provider.GetRepositories()
 		require.Nil(err)
 		require.Len(repositories, 3)
-		require.Equal(scen.expectedRepoName, repositories[i].Name)
-		require.Equal(scen.expectedSSHURL, repositories[i].SSHURL)
-		require.Equal(scen.expectedHTTPSURL, repositories[i].CloneURL)
-		require.Equal(scen.expectedHTMLURL, repositories[i].HTMLURL)
+		require.Equal(tt.expectedRepoName, repositories[i].Name)
+		require.Equal(tt.expectedSSHURL, repositories[i].SSHURL)
+		require.Equal(tt.expectedHTTPSURL, repositories[i].CloneURL)
+		require.Equal(tt.expectedHTMLURL, repositories[i].HTMLURL)
 	}
 }
 
 func (s *GitlabProviderSuite) TestGetIssues() {
 	require := s.Require()
-	closed := "closed"
-	scenarios := []struct {
+	tests := []struct {
 		testDescription string
 		expectedOwner   string
 		expectedRepo    string
 		expectedTitle   string
 		expectedBody    string
-		expectedState   *string
+		expectedState   string
 		labels          []provider.GitLabel
 	}{
 		{
@@ -183,19 +218,19 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 			gitlabOrgName, gitlabProjectName,
 			"Ut commodi ullam eos dolores perferendis nihil sunt.",
 			"Omnis vero earum sunt corporis dolor et placeat.",
-			&closed, []provider.GitLabel{},
+			"closed", []provider.GitLabel{},
 		},
 	}
-	for i, scen := range scenarios {
-		issues, err := s.provider.GetIssues(4, gitlabOrgName, gitlabProjectName)
+	for i, tt := range tests {
+		issues, err := s.provider.GetIssues(4, gitlabProjectName)
 		require.Nil(err)
 		require.Len(issues, 1)
-		require.Equal(scen.expectedOwner, issues[i].Owner)
-		require.Equal(scen.expectedRepo, issues[i].Repo)
-		require.Equal(scen.expectedTitle, issues[i].Title)
-		require.Equal(scen.expectedBody, issues[i].Body)
-		require.Equal(*scen.expectedState, *issues[i].State)
-		require.Equal(scen.labels, issues[i].Labels)
+		require.Equal(tt.expectedOwner, issues[i].Owner)
+		require.Equal(tt.expectedRepo, issues[i].Repo)
+		require.Equal(tt.expectedTitle, issues[i].Title)
+		require.Equal(tt.expectedBody, issues[i].Body)
+		require.Equal(tt.expectedState, issues[i].State)
+		require.Equal(tt.labels, issues[i].Labels)
 	}
 }
 
