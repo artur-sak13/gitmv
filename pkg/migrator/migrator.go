@@ -45,7 +45,7 @@ func NewMigrator(src, dest provider.GitProvider) *Migrator {
 // Run
 // TODO: Process concurrently and wait for imports to complete
 func (m *Migrator) Run() error {
-	_, err := m.Src.GetRepositories()
+	repos, err := m.Src.GetRepositories()
 	if err != nil {
 		return fmt.Errorf("failed to retrieve repos: %v", err)
 	}

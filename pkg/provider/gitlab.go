@@ -39,6 +39,8 @@ type GitlabProvider struct {
 	DryRun  bool
 }
 
+type getterFn func(opts gitlab.ListOptions) (*gitlab.Response, error)
+
 // NewGitlabProvider creates a new GitLab client which implements the provider interface
 func NewGitlabProvider(id *auth.ID, dryRun bool) (GitProvider, error) {
 	client := gitlab.NewClient(nil, id.Token)
@@ -69,7 +71,18 @@ func WithGitlabClient(id *auth.ID, client *gitlab.Client, dryRun bool) GitProvid
 // GetRepositories gets a list of all repositories in the target Gitlab instance
 // For >100 repositories this _depaginates_ the responses and appends them to one slice
 func (g *GitlabProvider) GetRepositories() ([]*GitRepository, error) {
-	result, err := getRepositories(g.Client)
+	var result []*gitlab.Project
+	projectOpts := gitlab.ListProjectsOptions{Statistics: gitlab.Bool(true)}
+
+	_, err := depaginate(func(opts gitlab.ListOptions) (*gitlab.Response, error) {
+		projectOpts.ListOptions = opts
+
+		projects, resp, err := g.Client.Projects.ListProjects(&projectOpts)
+
+		result = append(result, projects...)
+		return resp, err
+	})
+
 	if err != nil {
 		return nil, err
 	}
@@ -79,38 +92,6 @@ func (g *GitlabProvider) GetRepositories() ([]*GitRepository, error) {
 		repos = append(repos, fromGitlabProject(project))
 	}
 	return repos, nil
-}
-
-func getRepositories(c *gitlab.Client) ([]*gitlab.Project, error) {
-	opts := &gitlab.ListProjectsOptions{
-		Statistics: gitlab.Bool(true),
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: 100,
-		},
-	}
-	var list []*gitlab.Project
-
-	for {
-		projects, resp, err := c.Projects.ListProjects(opts)
-
-		if err != nil {
-			return list, err
-		}
-
-		list = append(list, projects...)
-
-		if lastPage(resp) {
-			break
-		}
-
-		opts.Page = resp.NextPage
-	}
-	filtered := filter(list, func(proj *gitlab.Project) bool {
-		return proj.Statistics.CommitCount != 0 && proj.ForkedFromProject == nil
-	})
-	return filtered, nil
-
 }
 
 func fromGitlabProject(project *gitlab.Project) *GitRepository {
@@ -127,7 +108,18 @@ func fromGitlabProject(project *gitlab.Project) *GitRepository {
 // GetComments retrieves a full list of Issues for a project
 // For >100 issues this _depaginates_ the responses and appends them to one slice
 func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
-	result, err := getIssues(g.Client, pid)
+	var result []*gitlab.Issue
+	issueOpts := gitlab.ListProjectIssuesOptions{}
+
+	_, err := depaginate(func(opts gitlab.ListOptions) (*gitlab.Response, error) {
+		issueOpts.ListOptions = opts
+
+		issues, resp, err := g.Client.Issues.ListProjectIssues(pid, &issueOpts)
+
+		result = append(result, issues...)
+		return resp, err
+	})
+
 	if err != nil {
 		return nil, err
 	}
@@ -145,32 +137,6 @@ func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 	}
 
 	return issues, nil
-}
-
-func getIssues(c *gitlab.Client, pid int) ([]*gitlab.Issue, error) {
-	opts := gitlab.ListProjectIssuesOptions{
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: 100,
-		},
-	}
-	var list []*gitlab.Issue
-
-	for {
-		issues, resp, err := c.Issues.ListProjectIssues(pid, &opts)
-		if err != nil {
-			return list, err
-		}
-
-		list = append(list, issues...)
-
-		if lastPage(resp) {
-			break
-		}
-
-		opts.Page = resp.NextPage
-	}
-	return list, nil
 }
 
 func fromGitlabIssue(issue *gitlab.Issue) *GitIssue {
@@ -221,26 +187,22 @@ func fromGitlabUser(user *gitlab.User) *GitUser {
 // GetComments retrieves a full list of comments for a project issue
 // For >100 comments this _depaginates_ the responses and appends them to one slice
 func (g *GitlabProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, error) {
-	opts := &gitlab.ListIssueNotesOptions{
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: 100,
-		},
-	}
-
 	var list []*gitlab.Note
+	noteOpts := gitlab.ListIssueNotesOptions{}
 
-	for {
-		notes, resp, err := g.Client.Notes.ListIssueNotes(pid, issueNum, opts, gitlab.WithSudo(2))
-		if err != nil {
-			return fromGitlabComments(list), err
-		}
+	_, err := depaginate(func(opts gitlab.ListOptions) (*gitlab.Response, error) {
+		noteOpts.ListOptions = opts
+
+		notes, resp, err := g.Client.Notes.ListIssueNotes(pid, issueNum, &noteOpts, gitlab.WithSudo(2))
+
 		list = append(list, notes...)
-		if lastPage(resp) {
-			break
-		}
-		opts.Page = resp.NextPage
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
 	}
+
 	return fromGitlabComments(list), nil
 }
 
@@ -267,27 +229,22 @@ func fromGitlabComment(note *gitlab.Note) *GitIssueComment {
 
 // GetLabels retrieves a full list of labels associated with a project
 func (g *GitlabProvider) GetLabels(pid int) ([]*GitLabel, error) {
-	opts := gitlab.ListLabelsOptions{
-		Page:    1,
-		PerPage: 100,
-	}
-
 	var list []*gitlab.Label
+	var labelOpts gitlab.ListLabelsOptions
 
-	for {
-		labels, resp, err := g.Client.Labels.ListLabels(pid, &opts)
-		if err != nil {
-			return fromGitlabLabels(list), err
-		}
+	_, err := depaginate(func(opts gitlab.ListOptions) (*gitlab.Response, error) {
+		labelOpts = gitlab.ListLabelsOptions(opts)
 
-		list = append(list, labels...)
+		issues, resp, err := g.Client.Labels.ListLabels(pid, &labelOpts)
 
-		if lastPage(resp) {
-			break
-		}
+		list = append(list, issues...)
+		return resp, err
+	})
 
-		opts.Page = resp.NextPage
+	if err != nil {
+		return nil, err
 	}
+
 	return fromGitlabLabels(list), nil
 }
 
@@ -307,30 +264,24 @@ func fromGitlabLabel(label *gitlab.Label) *GitLabel {
 	}
 }
 
-// func (c *GitlabProvider) depaginate(opts *gitlab.ListOptions, call func() ([]interface{}, *gitlab.Response, error)) ([]interface{}, error) {
-// 	var list []interface{}
-// 	wrapper := func() (*gitlab.Response, error) {
-// 		items, resp, err := call()
-// 		if err == nil {
-// 			list = append(list, items...)
-// 		}
-// 		return resp, err
-// 	}
+func depaginate(closure getterFn) (*gitlab.Response, error) {
+	var resp *gitlab.Response
+	var err error
 
-// 	opts.Page = 1
-// 	opts.PerPage = 100
-// 	for {
-// 		resp, err := wrapper()
-// 		if err != nil {
-// 			return list, fmt.Errorf("error while depaginating page %d/%d: %v", opts.Page, resp.PreviousPage, err)
-// 		}
-// 		if lastPage(resp) {
-// 			break
-// 		}
-// 		opts.Page = resp.NextPage
-// 	}
-// 	return list, nil
-// }
+	opts := gitlab.ListOptions{
+		Page:    1,
+		PerPage: 100,
+	}
+
+	for {
+		resp, err = closure(opts)
+		if err != nil || lastPage(resp) {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return resp, err
+}
 
 func filter(projects []*gitlab.Project, fn func(p *gitlab.Project) bool) []*gitlab.Project {
 	projs := []*gitlab.Project{}
