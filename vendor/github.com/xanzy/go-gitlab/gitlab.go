@@ -123,6 +123,15 @@ func (t *ISOTime) UnmarshalJSON(data []byte) error {
 	return err
 }
 
+// EncodeValues implements the query.Encoder interface
+func (t *ISOTime) EncodeValues(key string, v *url.Values) error {
+	if t == nil || (time.Time(*t)).IsZero() {
+		return nil
+	}
+	v.Add(key, t.String())
+	return nil
+}
+
 // String implements the Stringer interface
 func (t ISOTime) String() string {
 	return time.Time(t).Format(iso8601)
@@ -321,6 +330,7 @@ type Client struct {
 	ProjectSnippets       *ProjectSnippetsService
 	ProjectVariables      *ProjectVariablesService
 	ProtectedBranches     *ProtectedBranchesService
+	ProtectedTags         *ProtectedTagsService
 	Repositories          *RepositoriesService
 	RepositoryFiles       *RepositoryFilesService
 	Runners               *RunnersService
@@ -461,6 +471,7 @@ func newClient(httpClient *http.Client) *Client {
 	c.ProjectSnippets = &ProjectSnippetsService{client: c}
 	c.ProjectVariables = &ProjectVariablesService{client: c}
 	c.ProtectedBranches = &ProtectedBranchesService{client: c}
+	c.ProtectedTags = &ProtectedTagsService{client: c}
 	c.Repositories = &RepositoriesService{client: c}
 	c.RepositoryFiles = &RepositoryFilesService{client: c}
 	c.Runners = &RunnersService{client: c}

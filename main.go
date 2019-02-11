@@ -30,18 +30,22 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/artur-sak13/gitmv/pkg/migrator"
+
+	"github.com/artur-sak13/gitmv/pkg/auth"
+	"github.com/artur-sak13/gitmv/pkg/provider"
+
 	"github.com/artur-sak13/gitmv/version"
 
 	"github.com/genuinetools/pkg/cli"
 	"github.com/sirupsen/logrus"
+
+	"github.com/google/gops/agent"
 )
 
-// TODO: Implement rest of cli
-// TODO: Use closures and partial function application to remove repetition
-// TODO: Get ssh keys for users
-// TODO: Process concurrently and wait for imports to complete
-// TODO: Add option to "dry-run" migration
-
+// *     [X] Make it work
+// ?     [?] Make it fast
+// TODO: [ ] Make it clear
 var (
 	githubToken string
 	gitlabToken string
@@ -101,25 +105,29 @@ func runCommand(ctx context.Context, args []string) error {
 	go func() {
 		for sig := range signals {
 			cancel()
-			logrus.Infof("Received %s, exiting.", sig.String())
+			logrus.Infof("received %s, exiting.", sig.String())
 			os.Exit(0)
 		}
 	}()
 
-	// glClient, err := client.NewGitlabClient(customURL, gitlabToken)
-	// if err != nil {
-	// 	return err
-	// }
+	if err := agent.Listen(agent.Options{
+		ShutdownCleanup: true, // automatically closes on os.Interrupt
+	}); err != nil {
+		logrus.Fatalf("gops agent failed: %v", err)
+	}
 
-	// ghClient := client.NewGitHubClient(ctx, githubToken, true)
-	// logrus.Debugf("Getting projects...")
-
-	// projects, err := glClient.GetProjects()
-
-	// if err != nil {
-	// 	logrus.Errorf("failed to get repos, %v\n", err)
-	// 	return err
-	// }
+	a := auth.NewAuthID("https://gitlab.twopoint.io", gitlabToken, "")
+	src, err := provider.NewGitlabProvider(a)
+	if err != nil {
+		return err
+	}
+	dest := provider.NewFakeProvider()
+	mig := migrator.NewMigrator(src, dest)
+	err = mig.Run()
+	if err != nil {
+		logrus.Fatalf("error moving repos: %v", err)
+		os.Exit(0)
+	}
 
 	return nil
 }

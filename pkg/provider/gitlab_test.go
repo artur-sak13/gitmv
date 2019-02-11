@@ -75,7 +75,7 @@ func setup(s *GitlabProviderSuite) (*http.ServeMux, *httptest.Server, *provider.
 	id := auth.NewAuthID(server.URL, "test-token", gitlabOrgName)
 
 	// Gitlab provider that we want to test
-	prov := provider.WithGitlabClient(id, c, false)
+	prov := provider.WithGitlabClient(id, c)
 
 	return mux, server, prov.(*provider.GitlabProvider)
 }
@@ -206,7 +206,6 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 	require := s.Require()
 	tests := []struct {
 		testDescription string
-		expectedOwner   string
 		expectedRepo    string
 		expectedTitle   string
 		expectedBody    string
@@ -215,7 +214,7 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 	}{
 		{
 			"Get issues",
-			gitlabOrgName, gitlabProjectName,
+			gitlabProjectName,
 			"Ut commodi ullam eos dolores perferendis nihil sunt.",
 			"Omnis vero earum sunt corporis dolor et placeat.",
 			"closed", []provider.GitLabel{},
@@ -225,7 +224,6 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 		issues, err := s.provider.GetIssues(4, gitlabProjectName)
 		require.Nil(err)
 		require.Len(issues, 1)
-		require.Equal(tt.expectedOwner, issues[i].Owner)
 		require.Equal(tt.expectedRepo, issues[i].Repo)
 		require.Equal(tt.expectedTitle, issues[i].Title)
 		require.Equal(tt.expectedBody, issues[i].Body)

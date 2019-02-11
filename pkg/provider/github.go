@@ -38,27 +38,24 @@ type GithubProvider struct {
 	Client  *github.Client
 	Context context.Context
 	ID      *auth.ID
-
-	DryRun bool
 }
 
 // NewGithubProvider
-func NewGithubProvider(ctx context.Context, id *auth.ID, dryRun bool) (GitProvider, error) {
+func NewGithubProvider(ctx context.Context, id *auth.ID) (GitProvider, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: id.Token},
 	)
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
-	return WithGithubClient(ctx, client, id, dryRun), nil
+	return WithGithubClient(ctx, client, id), nil
 }
 
 // WithGithubClient
-func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID, dryRun bool) GitProvider {
+func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) GitProvider {
 	return &GithubProvider{
 		Client:  client,
 		Context: ctx,
 		ID:      id,
-		DryRun:  dryRun,
 	}
 }
 
@@ -97,15 +94,16 @@ func (g *GithubProvider) RepositoryExists(name string) bool {
 }
 
 // CreateIssue
-func (g *GithubProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, error) {
+func (g *GithubProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	issueRequest := &github.IssueRequest{
 		Title:     &issue.Title,
 		Body:      &issue.Body,
+		State:     &issue.State,
 		Labels:    ToGitLabelStringSlice(issue.Labels),
 		Assignees: UsersToString(issue.Assignees),
 	}
 
-	result, _, err := g.Client.Issues.Create(g.Context, g.ID.Owner, repo, issueRequest)
+	result, _, err := g.Client.Issues.Create(g.Context, g.ID.Owner, issue.Repo, issueRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +112,10 @@ func (g *GithubProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, e
 	if result.Number != nil {
 		number = *result.Number
 	}
-	return fromGithubIssue(repo, number, result), nil
+	return fromGithubIssue(number, result), nil
 }
 
-func fromGithubIssue(name string, number int, issue *github.Issue) *GitIssue {
+func fromGithubIssue(number int, issue *github.Issue) *GitIssue {
 	labels := []GitLabel{}
 	for _, label := range issue.Labels {
 		label := label // Pin to scope
@@ -137,9 +135,6 @@ func fromGithubIssue(name string, number int, issue *github.Issue) *GitIssue {
 		Body:      issue.GetBody(),
 		Labels:    labels,
 		User:      fromGithubUser(issue.User),
-		CreatedAt: issue.GetCreatedAt(),
-		UpdatedAt: issue.GetUpdatedAt(),
-		ClosedAt:  issue.GetClosedAt(),
 		Assignees: assignees,
 	}
 }
@@ -153,14 +148,14 @@ func fromGithubUser(user *github.User) *GitUser {
 }
 
 // CreateIssueComment
-func (g *GithubProvider) CreateIssueComment(repo string, number int, comment *GitIssueComment) error {
+func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
 	issueComment := &github.IssueComment{
 		User:      &github.User{Email: &comment.User.Email},
 		Body:      &comment.Body,
 		CreatedAt: &comment.CreatedAt,
 		UpdatedAt: &comment.UpdatedAt,
 	}
-	_, _, err := g.Client.Issues.CreateComment(g.Context, g.ID.Owner, repo, number, issueComment)
+	_, _, err := g.Client.Issues.CreateComment(g.Context, g.ID.Owner, comment.Repo, comment.IssueNum, issueComment)
 	if err != nil {
 		return err
 	}
@@ -168,14 +163,14 @@ func (g *GithubProvider) CreateIssueComment(repo string, number int, comment *Gi
 }
 
 // CreateLabel
-func (g *GithubProvider) CreateLabel(repo string, srcLabel *GitLabel) (*GitLabel, error) {
+func (g *GithubProvider) CreateLabel(srcLabel *GitLabel) (*GitLabel, error) {
 	label := &github.Label{
 		Name:        &srcLabel.Name,
 		Color:       &srcLabel.Color,
 		Description: &srcLabel.Description,
 	}
 
-	result, _, err := g.Client.Issues.CreateLabel(g.Context, g.ID.Owner, repo, label)
+	result, _, err := g.Client.Issues.CreateLabel(g.Context, g.ID.Owner, srcLabel.Repo, label)
 	if err != nil {
 		return nil, err
 	}
@@ -225,13 +220,13 @@ func (g *GithubProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 }
 
 // GetComments
-func (g *GithubProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, error) {
+func (g *GithubProvider) GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
 // GetLabels
-func (g *GithubProvider) GetLabels(pid int) ([]*GitLabel, error) {
+func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	// TODO: Implement
 	return nil, nil
 }

@@ -36,20 +36,19 @@ type GitlabProvider struct {
 	Client  *gitlab.Client
 	Context context.Context
 	ID      *auth.ID
-	DryRun  bool
 }
 
 type getterFn func(opts gitlab.ListOptions) (*gitlab.Response, error)
 
 // NewGitlabProvider creates a new GitLab client which implements the provider interface
-func NewGitlabProvider(id *auth.ID, dryRun bool) (GitProvider, error) {
+func NewGitlabProvider(id *auth.ID) (GitProvider, error) {
 	client := gitlab.NewClient(nil, id.Token)
 	if !IsHosted(id.URL) {
 		if err := client.SetBaseURL(id.URL); err != nil {
 			return nil, err
 		}
 	}
-	return WithGitlabClient(id, client, dryRun), nil
+	return WithGitlabClient(id, client), nil
 }
 
 // IsHosted checks if the specified URL is a Git SaaS provider
@@ -60,11 +59,10 @@ func IsHosted(u string) bool {
 
 // WithGitlabClient creates a new GitProvider with a Gitlab client
 // This function is exported to create mock clients in tests
-func WithGitlabClient(id *auth.ID, client *gitlab.Client, dryRun bool) GitProvider {
+func WithGitlabClient(id *auth.ID, client *gitlab.Client) GitProvider {
 	return &GitlabProvider{
 		Client: client,
 		ID:     id,
-		DryRun: dryRun,
 	}
 }
 
@@ -101,6 +99,7 @@ func fromGitlabProject(project *gitlab.Project) *GitRepository {
 		SSHURL:   project.SSHURLToRepo,
 		CloneURL: project.HTTPURLToRepo,
 		Fork:     project.ForkedFromProject != nil,
+		Empty:    project.Statistics.CommitCount == 0,
 		PID:      project.ID,
 	}
 }
@@ -128,8 +127,8 @@ func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 
 	for _, issue := range result {
 		gitissue := fromGitlabIssue(issue)
-		gitissue.Owner = g.ID.Owner
 		gitissue.Repo = repo
+		gitissue.PID = pid
 		gitissue.User = g.GetUserByID(issue.Author.ID)
 		gitissue.Assignees = g.getAssignees(issue.Assignees)
 
@@ -141,14 +140,11 @@ func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 
 func fromGitlabIssue(issue *gitlab.Issue) *GitIssue {
 	return &GitIssue{
-		Number:    issue.IID,
-		Title:     issue.Title,
-		Body:      issue.Description,
-		State:     issue.State,
-		Labels:    ToGitLabels(issue.Labels),
-		CreatedAt: *issue.CreatedAt,
-		UpdatedAt: *issue.UpdatedAt,
-		ClosedAt:  *issue.ClosedAt,
+		Number: issue.IID,
+		Title:  issue.Title,
+		Body:   issue.Description,
+		State:  issue.State,
+		Labels: ToGitLabels(issue.Labels),
 	}
 }
 
@@ -186,7 +182,7 @@ func fromGitlabUser(user *gitlab.User) *GitUser {
 
 // GetComments retrieves a full list of comments for a project issue
 // For >100 comments this _depaginates_ the responses and appends them to one slice
-func (g *GitlabProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, error) {
+func (g *GitlabProvider) GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error) {
 	var list []*gitlab.Note
 	noteOpts := gitlab.ListIssueNotesOptions{}
 
@@ -203,21 +199,23 @@ func (g *GitlabProvider) GetComments(pid, issueNum int) ([]*GitIssueComment, err
 		return nil, err
 	}
 
-	return fromGitlabComments(list), nil
+	return fromGitlabComments(repo, issueNum, list), nil
 }
 
-func fromGitlabComments(notes []*gitlab.Note) []*GitIssueComment {
+func fromGitlabComments(repo string, issueNum int, notes []*gitlab.Note) []*GitIssueComment {
 	var result []*GitIssueComment
 
 	for _, note := range notes {
-		result = append(result, fromGitlabComment(note))
+		result = append(result, fromGitlabComment(repo, issueNum, note))
 	}
 
 	return result
 }
 
-func fromGitlabComment(note *gitlab.Note) *GitIssueComment {
+func fromGitlabComment(repo string, issueNum int, note *gitlab.Note) *GitIssueComment {
 	return &GitIssueComment{
+		Repo:     repo,
+		IssueNum: issueNum,
 		User: GitUser{
 			Email: note.Author.Email,
 		},
@@ -228,7 +226,7 @@ func fromGitlabComment(note *gitlab.Note) *GitIssueComment {
 }
 
 // GetLabels retrieves a full list of labels associated with a project
-func (g *GitlabProvider) GetLabels(pid int) ([]*GitLabel, error) {
+func (g *GitlabProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	var list []*gitlab.Label
 	var labelOpts gitlab.ListLabelsOptions
 
@@ -245,19 +243,20 @@ func (g *GitlabProvider) GetLabels(pid int) ([]*GitLabel, error) {
 		return nil, err
 	}
 
-	return fromGitlabLabels(list), nil
+	return fromGitlabLabels(repo, list), nil
 }
 
-func fromGitlabLabels(labels []*gitlab.Label) []*GitLabel {
+func fromGitlabLabels(repo string, labels []*gitlab.Label) []*GitLabel {
 	var result []*GitLabel
 	for _, label := range labels {
-		result = append(result, fromGitlabLabel(label))
+		result = append(result, fromGitlabLabel(repo, label))
 	}
 	return result
 }
 
-func fromGitlabLabel(label *gitlab.Label) *GitLabel {
+func fromGitlabLabel(repo string, label *gitlab.Label) *GitLabel {
 	return &GitLabel{
+		Repo:        repo,
 		Name:        label.Name,
 		Color:       label.Color,
 		Description: label.Description,
@@ -304,13 +303,18 @@ func (g *GitlabProvider) CreateRepository(name, description string) (*GitReposit
 }
 
 // CreateIssue
-func (g *GitlabProvider) CreateIssue(repo string, issue *GitIssue) (*GitIssue, error) {
+func (g *GitlabProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
 // CreateIssueComment
-func (g *GitlabProvider) CreateIssueComment(repo string, number int, comment *GitIssueComment) error {
+func (g *GitlabProvider) CreateIssueComment(comment *GitIssueComment) error {
 	// TODO: Implement
 	return nil
+}
+
+func (g *GitlabProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
+	// TODO: Implement
+	return nil, nil
 }

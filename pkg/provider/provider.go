@@ -32,25 +32,25 @@ type (
 		CloneURL string
 		SSHURL   string
 		Fork     bool
+		Empty    bool
 		PID      int
 	}
 	// GitIssue
 	GitIssue struct {
-		Owner     string
 		Repo      string
+		PID       int
 		Number    int
 		Title     string
 		Body      string
 		State     string
 		Labels    []GitLabel
-		CreatedAt time.Time
-		UpdatedAt time.Time
-		ClosedAt  time.Time
 		User      *GitUser
 		Assignees []GitUser
 	}
 	// GitIssueComment
 	GitIssueComment struct {
+		Repo      string
+		IssueNum  int
 		User      GitUser
 		Body      string
 		CreatedAt time.Time
@@ -64,6 +64,7 @@ type (
 	}
 	// GitLabel
 	GitLabel struct {
+		Repo        string
 		Name        string
 		Color       string
 		Description string

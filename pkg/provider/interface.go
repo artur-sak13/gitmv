@@ -27,18 +27,20 @@ type GitProvider interface {
 	// Create methods
 	CreateRepository(name, description string) (*GitRepository, error)
 
-	CreateIssue(repo string, issue *GitIssue) (*GitIssue, error)
+	CreateIssue(issue *GitIssue) (*GitIssue, error)
 
-	CreateIssueComment(repo string, number int, comment *GitIssueComment) error
+	CreateIssueComment(comment *GitIssueComment) error
+
+	CreateLabel(label *GitLabel) (*GitLabel, error)
 
 	// Read methods
 	GetRepositories() ([]*GitRepository, error)
 
 	GetIssues(pid int, repo string) ([]*GitIssue, error)
 
-	GetComments(pid, issueNum int) ([]*GitIssueComment, error)
+	GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error)
 
-	GetLabels(pid int) ([]*GitLabel, error)
+	GetLabels(pid int, repo string) ([]*GitLabel, error)
 
 	// ValidateRepositoryName(org string, name string) error
 }
