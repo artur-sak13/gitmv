@@ -38,23 +38,12 @@ type Migrator struct {
 	Errors chan error
 }
 
-type Worker struct {
-	Migrator  *Migrator
-	WaitGroup *sync.WaitGroup
-}
-
 // NewMigrator
 func NewMigrator(src, dest provider.GitProvider) *Migrator {
 	return &Migrator{
 		Src:    src,
 		Dest:   dest,
 		Errors: make(chan error),
-	}
-}
-
-func (m *Migrator) NewWorker() *Worker {
-	return &Worker{
-		Migrator: m,
 	}
 }
 
@@ -66,31 +55,31 @@ func (m *Migrator) Run() error {
 		return fmt.Errorf("failed to retrieve repos: %v", err)
 	}
 
-	const maxgoroutines = 20
-
 	start := time.Now()
 	wg := sync.WaitGroup{}
-	wg.Add(len(repos))
+	count := 0
 
 	for _, repo := range repos {
 		if repo.Fork || repo.Empty {
 			continue
 		}
+		wg.Add(1)
+		count++
 
 		_, err := m.Dest.CreateRepository(repo.Name, "")
 		if err != nil {
 			return fmt.Errorf("failed to create repository: %v", err)
 		}
-		worker := m.NewWorker()
+
 		go func(repo *provider.GitRepository) {
-			worker.processIssues(repo)
-			worker.processLabels(repo)
+			m.processIssues(repo)
+			m.processLabels(repo)
 			wg.Done()
 		}(repo)
 
 	}
 	wg.Wait()
-	logrus.Infof("processed %d repositories in %s\n", len(repos), time.Since(start))
+	logrus.Infof("processed %d repositories in %s\n", count, time.Since(start))
 
 	if len(m.Errors) > 0 {
 		for err := range m.Errors {
@@ -102,64 +91,82 @@ func (m *Migrator) Run() error {
 	return nil
 }
 
-func (w *Worker) processIssues(repo *provider.GitRepository) {
-	issues, err := w.Migrator.Src.GetIssues(repo.PID, repo.Name)
+func (m *Migrator) processIssues(repo *provider.GitRepository) {
+	issues, err := m.Src.GetIssues(repo.PID, repo.Name)
 	if err != nil {
 		logrus.Errorf("error in process issues")
-		w.Migrator.Errors <- fmt.Errorf("failed to retrieve issues: %v", err)
+		m.Errors <- fmt.Errorf("failed to retrieve issues: %v", err)
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(issues))
 
 	go func() {
 		for _, issue := range issues {
-			_, err := w.Migrator.Dest.CreateIssue(issue)
+
+			logrus.WithFields(logrus.Fields{
+				"IID":   issue.Number,
+				"issue": issue.Title,
+				"state": issue.State,
+			}).Info("creating issue")
+
+			_, err := m.Dest.CreateIssue(issue)
 			if err != nil {
 				logrus.Errorf("error in process issues: %v", err)
-				w.Migrator.Errors <- fmt.Errorf("failed to create issue: %v", err)
+				m.Errors <- fmt.Errorf("failed to create issue: %v", err)
 			}
-			w.processComments(issue, &wg)
+			m.processComments(issue, &wg)
 		}
 	}()
 	wg.Wait()
 }
 
-func (w *Worker) processComments(issue *provider.GitIssue, wg *sync.WaitGroup) {
-	comments, err := w.Migrator.Src.GetComments(issue.PID, issue.Number, issue.Repo)
+func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup) {
+	comments, err := m.Src.GetComments(issue.PID, issue.Number, issue.Repo)
 	if err != nil {
-		logrus.Errorf("error getting comments for issue %s of repo %s: %v", issue.Title, issue.Repo, err)
-		logrus.Errorf("logging issue...%v", *issue)
-		w.Migrator.Errors <- fmt.Errorf("failed to retrieve project comments: %v", err)
+		m.Errors <- fmt.Errorf("failed to retrieve project comments: %v", err)
 		wg.Done()
 		return
 	}
 	go func() {
 		for _, comment := range comments {
-			err := w.Migrator.Dest.CreateIssueComment(comment)
+
+			logrus.WithFields(logrus.Fields{
+				"repo":    comment.Repo,
+				"comment": comment.Body,
+			}).Info("creating comment")
+
+			err := m.Dest.CreateIssueComment(comment)
 			if err != nil {
 				logrus.Errorf("error creating comments for repo %s: %v", issue.Repo, err)
-				w.Migrator.Errors <- fmt.Errorf("failed to create comment: %v", err)
+				m.Errors <- fmt.Errorf("failed to create comment: %v", err)
 			}
 		}
 		wg.Done()
 	}()
 }
 
-func (w *Worker) processLabels(repo *provider.GitRepository) {
-	labels, err := w.Migrator.Src.GetLabels(repo.PID, repo.Name)
+func (m *Migrator) processLabels(repo *provider.GitRepository) {
+	labels, err := m.Src.GetLabels(repo.PID, repo.Name)
 	if err != nil {
 		logrus.Errorf("error in process labels: %v", err)
-		w.Migrator.Errors <- fmt.Errorf("failed to retrieve labels: %v", err)
+		m.Errors <- fmt.Errorf("failed to retrieve labels: %v", err)
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(len(labels))
 
 	for _, label := range labels {
 		go func(label *provider.GitLabel) {
-			_, err := w.Migrator.Dest.CreateLabel(label)
+
+			logrus.WithFields(logrus.Fields{
+				"repo":  label.Repo,
+				"label": label.Name,
+				"color": label.Color,
+			}).Info("creating label")
+
+			_, err := m.Dest.CreateLabel(label)
 			if err != nil {
 				logrus.Errorf("error in process labels: %v", err)
-				w.Migrator.Errors <- fmt.Errorf("failed to create label: %v", err)
+				m.Errors <- fmt.Errorf("failed to create label: %v", err)
 			}
 			wg.Done()
 		}(label)

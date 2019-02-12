@@ -46,6 +46,7 @@ Icon
 
 gitmv
 cross/
+deptest/
 
 # Go coverage results
 coverage.txt

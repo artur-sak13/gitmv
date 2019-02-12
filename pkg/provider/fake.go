@@ -64,20 +64,19 @@ func (f *FakeProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	}
 
 	fakeRepo.(*FakeRepository).issueCount++
-	number := fakeRepo.(*FakeRepository).issueCount
-	issue.Number = number
 
 	newIssue := &FakeIssue{
 		Issue:    issue,
 		Comments: []*GitIssueComment{},
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"issue": issue.Title,
-		"state": issue.State,
-	}).Info("creating issue")
+	// logrus.WithFields(logrus.Fields{
+	// 	"IID":   issue.Number,
+	// 	"issue": issue.Title,
+	// 	"state": issue.State,
+	// }).Info("creating issue")
 
-	fakeRepo.(*FakeRepository).Issues.Store(number, newIssue)
+	fakeRepo.(*FakeRepository).Issues.Store(issue.Number, newIssue)
 
 	return issue, nil
 }
@@ -91,10 +90,10 @@ func (f *FakeProvider) CreateIssueComment(comment *GitIssueComment) error {
 		return fmt.Errorf("repository '%s' not found", comment.Repo)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"repo":    comment.Repo,
-		"comment": comment.Body,
-	}).Info("creating comment")
+	// logrus.WithFields(logrus.Fields{
+	// 	"repo":    comment.Repo,
+	// 	"comment": comment.Body,
+	// }).Info("creating comment")
 
 	repoIssue, ok := fakeRepo.(*FakeRepository).Issues.Load(number)
 	if !ok {
@@ -112,11 +111,11 @@ func (f *FakeProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 	}
 	repo := fakeRepo.(*FakeRepository)
 
-	logrus.WithFields(logrus.Fields{
-		"repo":  label.Repo,
-		"label": label.Name,
-		"color": label.Color,
-	}).Info("creating label")
+	// logrus.WithFields(logrus.Fields{
+	// 	"repo":  label.Repo,
+	// 	"label": label.Name,
+	// 	"color": label.Color,
+	// }).Info("creating label")
 
 	repo.Labels = append(repo.Labels, label)
 

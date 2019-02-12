@@ -25,7 +25,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
+	"time"
 
 	"github.com/artur-sak13/gitmv/pkg/auth"
 
@@ -34,10 +36,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// TODO: Make sure to retry on failure and attempt to "sync" updates between runs
 type GithubProvider struct {
 	Client  *github.Client
 	Context context.Context
 	ID      *auth.ID
+
+	retries int
 }
 
 // NewGithubProvider
@@ -56,6 +61,7 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 		Client:  client,
 		Context: ctx,
 		ID:      id,
+		retries: 5,
 	}
 }
 
@@ -66,12 +72,14 @@ func (g *GithubProvider) CreateRepository(name, description string) (*GitReposit
 		Private:     github.Bool(true),
 		Description: github.String(description),
 	}
-
-	r, _, err := g.Client.Repositories.Create(g.Context, g.ID.Owner, repo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, name, err)
+	if !g.RepositoryExists(name) {
+		r, _, err := g.Client.Repositories.Create(g.Context, g.ID.Owner, repo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, name, err)
+		}
+		return fromGithubRepo(r), nil
 	}
-	return fromGithubRepo(r), nil
+	return fromGithubRepo(repo), nil
 }
 
 func fromGithubRepo(repo *github.Repository) *GitRepository {
@@ -205,6 +213,48 @@ func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) error {
 	}
 	logrus.Infof("importing %s", *result.Status)
 	return nil
+}
+
+type retryAbort struct{ error }
+
+func (r *retryAbort) Error() string {
+	return fmt.Sprintf("aborting retry loop: %v", r.error)
+}
+
+func (g *GithubProvider) sleepForAttempt(retryCount int) {
+	maxDelay := 20 * time.Second
+	delay := time.Second * time.Duration(math.Exp2(float64(retryCount)))
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	time.Sleep(delay)
+}
+
+func (g *GithubProvider) retry(action string, call func() (*github.Response, error)) (*github.Response, error) {
+	var err error
+	var resp *github.Response
+
+	for retryCount := 0; retryCount <= g.retries; retryCount++ {
+		if resp, err = call(); err == nil {
+			return resp, nil
+		}
+		switch err := err.(type) {
+		case *github.RateLimitError:
+			return resp, err
+		case *github.TwoFactorAuthError:
+			return resp, err
+		case *retryAbort:
+			return resp, err
+		}
+
+		if retryCount == g.retries {
+			return resp, err
+		}
+		logrus.Errorf("error %s: %v. Retrying...\n", action, err)
+
+		g.sleepForAttempt(retryCount)
+	}
+	return resp, err
 }
 
 // GetRepositories

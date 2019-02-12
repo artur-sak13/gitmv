@@ -206,6 +206,7 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 	require := s.Require()
 	tests := []struct {
 		testDescription string
+		expectedIID     int
 		expectedRepo    string
 		expectedTitle   string
 		expectedBody    string
@@ -213,7 +214,30 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 		labels          []provider.GitLabel
 	}{
 		{
+			"Get issues with quoted titles",
+			95,
+			gitlabProjectName,
+			"Change \"billmeth\" to \"Payor\" and \"tppaid\" to \"paid\"",
+			"Makes more sense.",
+			"closed",
+			[]provider.GitLabel{},
+		},
+		{
+			"Get issues with labels",
+			94,
+			gitlabProjectName,
+			"Convert Demo Test data on dev01 to new data model in a new demo instance",
+			"",
+			"closed",
+			[]provider.GitLabel{
+				provider.GitLabel{
+					Name: "To Do",
+				},
+			},
+		},
+		{
 			"Get issues",
+			1,
 			gitlabProjectName,
 			"Ut commodi ullam eos dolores perferendis nihil sunt.",
 			"Omnis vero earum sunt corporis dolor et placeat.",
@@ -223,7 +247,8 @@ func (s *GitlabProviderSuite) TestGetIssues() {
 	for i, tt := range tests {
 		issues, err := s.provider.GetIssues(4, gitlabProjectName)
 		require.Nil(err)
-		require.Len(issues, 1)
+		require.Len(issues, 3)
+		require.Equal(tt.expectedIID, issues[i].Number)
 		require.Equal(tt.expectedRepo, issues[i].Repo)
 		require.Equal(tt.expectedTitle, issues[i].Title)
 		require.Equal(tt.expectedBody, issues[i].Body)
