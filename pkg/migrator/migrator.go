@@ -31,14 +31,14 @@ import (
 	"github.com/artur-sak13/gitmv/pkg/provider"
 )
 
-// Migrator
+// Migrator stores the src and target git providers and an error channel
 type Migrator struct {
 	Src    provider.GitProvider
 	Dest   provider.GitProvider
 	Errors chan error
 }
 
-// NewMigrator
+// NewMigrator creates a new git migrator
 func NewMigrator(src, dest provider.GitProvider) *Migrator {
 	return &Migrator{
 		Src:    src,
@@ -47,12 +47,11 @@ func NewMigrator(src, dest provider.GitProvider) *Migrator {
 	}
 }
 
-// Run
-// TODO: Process concurrently and wait for imports to complete
+// Run processes git import jobs
 func (m *Migrator) Run() error {
 	repos, err := m.Src.GetRepositories()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve repos: %v", err)
+		return fmt.Errorf("error getting repos: %v", err)
 	}
 
 	start := time.Now()
@@ -66,10 +65,23 @@ func (m *Migrator) Run() error {
 		wg.Add(1)
 		count++
 
-		_, err := m.Dest.CreateRepository(repo.Name, "")
+		_, err := m.Dest.CreateRepository(repo)
 		if err != nil {
-			return fmt.Errorf("failed to create repository: %v", err)
+			return fmt.Errorf("error creating repository: %v", err)
 		}
+		logrus.WithFields(logrus.Fields{
+			"repo": repo.Name,
+			"url":  repo.SSHURL,
+		}).Infof("creating new repo")
+
+		status, err := m.Dest.MigrateRepo(repo, m.Src.GetAuthToken())
+		if err != nil {
+			return fmt.Errorf("error failed to migrate repository: %v", err)
+		}
+		logrus.WithFields(logrus.Fields{
+			"repo":   repo.Name,
+			"status": status,
+		}).Infof("importing repo")
 
 		go func(repo *provider.GitRepository) {
 			m.processIssues(repo)
@@ -94,8 +106,9 @@ func (m *Migrator) Run() error {
 func (m *Migrator) processIssues(repo *provider.GitRepository) {
 	issues, err := m.Src.GetIssues(repo.PID, repo.Name)
 	if err != nil {
-		logrus.Errorf("error in process issues")
+		logrus.Errorf("error getting issues: %v", err)
 		m.Errors <- fmt.Errorf("failed to retrieve issues: %v", err)
+		return
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(issues))
@@ -111,7 +124,7 @@ func (m *Migrator) processIssues(repo *provider.GitRepository) {
 
 			_, err := m.Dest.CreateIssue(issue)
 			if err != nil {
-				logrus.Errorf("error in process issues: %v", err)
+				logrus.Errorf("error creating issue: %v", err)
 				m.Errors <- fmt.Errorf("failed to create issue: %v", err)
 			}
 			m.processComments(issue, &wg)
@@ -123,6 +136,7 @@ func (m *Migrator) processIssues(repo *provider.GitRepository) {
 func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup) {
 	comments, err := m.Src.GetComments(issue.PID, issue.Number, issue.Repo)
 	if err != nil {
+		logrus.Errorf("error getting comments: %v", err)
 		m.Errors <- fmt.Errorf("failed to retrieve project comments: %v", err)
 		wg.Done()
 		return
@@ -148,8 +162,9 @@ func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup)
 func (m *Migrator) processLabels(repo *provider.GitRepository) {
 	labels, err := m.Src.GetLabels(repo.PID, repo.Name)
 	if err != nil {
-		logrus.Errorf("error in process labels: %v", err)
+		logrus.Errorf("error getting labels: %v", err)
 		m.Errors <- fmt.Errorf("failed to retrieve labels: %v", err)
+		return
 	}
 	wg := &sync.WaitGroup{}
 	wg.Add(len(labels))
@@ -165,7 +180,7 @@ func (m *Migrator) processLabels(repo *provider.GitRepository) {
 
 			_, err := m.Dest.CreateLabel(label)
 			if err != nil {
-				logrus.Errorf("error in process labels: %v", err)
+				logrus.Errorf("error creating label: %v", err)
 				m.Errors <- fmt.Errorf("failed to create label: %v", err)
 			}
 			wg.Done()

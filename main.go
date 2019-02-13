@@ -45,11 +45,12 @@ import (
 
 // *     [X] Make it work
 // ?     [?] Make it fast
-// TODO: [ ] Make it clear
+// TODO: [ ] Make it elegant
 var (
 	githubToken string
 	gitlabToken string
 	gitlabUser  string
+	keyPath     string
 	customURL   string
 	debug       bool
 )
@@ -66,6 +67,7 @@ func main() {
 	p.FlagSet.StringVar(&githubToken, "github-token", os.Getenv("GITHUB_TOKEN"), "GitHub API token (or env var GITHUB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabToken, "gitlab-token", os.Getenv("GITLAB_TOKEN"), "GitLab API token (or env var GITLAB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabUser, "gitlab-user", os.Getenv("GITLAB_USER"), "GitLab Username")
+	p.FlagSet.StringVar(&keyPath, "ssh-key", os.Getenv("SSH_KEY"), "SSH private key path to push Wikis")
 
 	p.FlagSet.StringVar(&customURL, "url", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
 	p.FlagSet.StringVar(&customURL, "u", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
@@ -116,7 +118,7 @@ func runCommand(ctx context.Context, args []string) error {
 		logrus.Fatalf("gops agent failed: %v", err)
 	}
 
-	a := auth.NewAuthID("https://gitlab.twopoint.io", gitlabToken, "")
+	a := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
 	src, err := provider.NewGitlabProvider(a)
 	if err != nil {
 		return err

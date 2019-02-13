@@ -25,13 +25,15 @@ package provider
 // GitProvider
 type GitProvider interface {
 	// Create methods
-	CreateRepository(name, description string) (*GitRepository, error)
+	CreateRepository(repo *GitRepository) (*GitRepository, error)
 
 	CreateIssue(issue *GitIssue) (*GitIssue, error)
 
 	CreateIssueComment(comment *GitIssueComment) error
 
 	CreateLabel(label *GitLabel) (*GitLabel, error)
+
+	MigrateRepo(repo *GitRepository, token string) (string, error)
 
 	// Read methods
 	GetRepositories() ([]*GitRepository, error)
@@ -41,6 +43,8 @@ type GitProvider interface {
 	GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error)
 
 	GetLabels(pid int, repo string) ([]*GitLabel, error)
+
+	GetAuthToken() string
 
 	// ValidateRepositoryName(org string, name string) error
 }

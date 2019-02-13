@@ -23,8 +23,11 @@
 package provider
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
+	"github.com/artur-sak13/gitmv/pkg/auth"
 	"github.com/sirupsen/logrus"
 
 	"gopkg.in/src-d/go-billy.v4/memfs"
@@ -34,39 +37,48 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
-func migrateWiki(url string) {
+func migrateWiki(repo *GitRepository, owner string, id auth.ID) error {
 	fs := memfs.New()
-	pks, err := ssh.NewPublicKeysFromFile("git", "/Users/Artur/.ssh/id_rsa", "")
+
+	pks, err := ssh.NewPublicKeysFromFile("git", id.SSHKeyPath, "")
 	if err != nil {
 		logrus.Errorf("unable to read private key: %v", err)
 	}
 
+	wikiURL := strings.TrimSuffix(repo.SSHURL, ".git") + ".wiki.git"
 	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
-		URL:      url,
+		URL:      wikiURL,
 		Auth:     pks,
 		Progress: os.Stdout,
 	})
+
 	if err != nil {
-		logrus.Errorf("error cloning repository %v", err)
+		return fmt.Errorf("error cloning repository %v", err)
 	}
 
 	err = r.DeleteRemote("origin")
 	if err != nil {
-		logrus.Errorf("error removing git remote %v", err)
+		return fmt.Errorf("error removing git remote %v", err)
 	}
+
+	newWikiURL := fmt.Sprintf("git@github.com:%s/%s.wiki.git", owner, repo.Name)
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{url},
+		URLs: []string{newWikiURL},
 	})
+
 	if err != nil {
-		logrus.Errorf("error creating remote repo %v", err)
+		return fmt.Errorf("error creating remote repo %v", err)
 	}
+
 	err = r.Push(&git.PushOptions{
 		Auth:     pks,
 		Progress: os.Stdout,
 	})
 
 	if err != nil {
-		logrus.Errorf("error could not push to remote repo %v", err)
+		return fmt.Errorf("error could not push to remote repo %v", err)
 	}
+
+	return nil
 }

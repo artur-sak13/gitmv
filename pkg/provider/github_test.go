@@ -11,19 +11,50 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/artur-sak13/gitmv/pkg/auth"
 	"github.com/google/go-github/v21/github"
 )
 
 const (
 	baseURLPath            = "/api-v3"
+	githubOrgName          = "o"
 	mediaTypeImportPreview = "application/vnd.github.barred-rock-preview"
 )
 
+func setup() (*GithubProvider, *http.ServeMux, string, func()) {
+	mux := http.NewServeMux()
+
+	apiHandler := http.NewServeMux()
+	apiHandler.Handle(baseURLPath+"/", http.StripPrefix(baseURLPath, mux))
+	apiHandler.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		fmt.Fprintln(os.Stderr, "FAIL: Client.BaseURL path prefix is not preserved in the request URL:")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "\t"+req.URL.String())
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "\tDid you accidentally use an absolute endpoint URL rather than relative?")
+		fmt.Fprintln(os.Stderr, "\tSee https://github.com/google/go-github/issues/752 for information.")
+		http.Error(w, "github.Client.BaseURL path prefix is not preserved in the request URL.", http.StatusInternalServerError)
+	})
+
+	server := httptest.NewServer(apiHandler)
+
+	client := github.NewClient(nil)
+	url, _ := url.Parse(server.URL + baseURLPath + "/")
+	client.BaseURL = url
+	client.UploadURL = url
+
+	id := auth.NewAuthID(server.URL, "p", "~/fake/.ssh/id_rsa", githubOrgName)
+	prov := WithGithubClient(context.Background(), client, id)
+
+	return prov.(*GithubProvider), mux, server.URL, server.Close
+}
+
 func TestMigrateRepo(t *testing.T) {
-	client, mux, _, teardown := setup()
+	prov, mux, _, teardown := setup()
 	defer teardown()
 	repo := &GitRepository{
-		CloneURL: "url",
+		CloneURL: "r",
+		Owner:    "u",
 	}
 
 	input := &github.Import{
@@ -47,13 +78,33 @@ func TestMigrateRepo(t *testing.T) {
 		fmt.Fprint(w, `{"status":"importing"}`)
 	})
 
-	got, _, err := client.Migrations.StartImport(context.Background(), "o", "r", input)
+	got, err := prov.MigrateRepo(repo, "p")
 	if err != nil {
 		t.Errorf("StartImport returned error: %v", err)
 	}
-	want := &github.Import{Status: github.String("importing")}
+	want := "importing"
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("StartImport = %+v, want %+v", got, want)
+	}
+}
+
+func TestImportProgress(t *testing.T) {
+	prov, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/repos/o/r/import", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "GET")
+		testHeader(t, r, "Accept", mediaTypeImportPreview)
+		fmt.Fprint(w, `{"status":"complete"}`)
+	})
+
+	got, err := prov.GetImportProgress("r")
+	if err != nil {
+		t.Errorf("ImportProgress returned error: %v", err)
+	}
+	want := "complete"
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ImportProgress = %+v, want %+v", got, want)
 	}
 }
 
@@ -67,29 +118,4 @@ func testHeader(t *testing.T, r *http.Request, header string, want string) {
 	if got := r.Header.Get(header); got != want {
 		t.Errorf("Header.Get(%q) returned %q, want %q", header, got, want)
 	}
-}
-
-func setup() (client *github.Client, mux *http.ServeMux, serverURL string, teardown func()) {
-	mux = http.NewServeMux()
-
-	apiHandler := http.NewServeMux()
-	apiHandler.Handle(baseURLPath+"/", http.StripPrefix(baseURLPath, mux))
-	apiHandler.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprintln(os.Stderr, "FAIL: Client.BaseURL path prefix is not preserved in the request URL:")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "\t"+req.URL.String())
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "\tDid you accidentally use an absolute endpoint URL rather than relative?")
-		fmt.Fprintln(os.Stderr, "\tSee https://github.com/google/go-github/issues/752 for information.")
-		http.Error(w, "Client.BaseURL path prefix is not preserved in the request URL.", http.StatusInternalServerError)
-	})
-
-	server := httptest.NewServer(apiHandler)
-
-	client = github.NewClient(nil)
-	url, _ := url.Parse(server.URL + baseURLPath + "/")
-	client.BaseURL = url
-	client.UploadURL = url
-
-	return client, mux, server.URL, server.Close
 }

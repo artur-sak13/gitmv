@@ -33,8 +33,7 @@ func TestFakeProvider_CreateRepository(t *testing.T) {
 		Repositories *sync.Map
 	}
 	type args struct {
-		name        string
-		description string
+		GitRepository *GitRepository
 	}
 	tests := []struct {
 		name    string
@@ -49,8 +48,10 @@ func TestFakeProvider_CreateRepository(t *testing.T) {
 				Repositories: &sync.Map{},
 			},
 			args: args{
-				name:        "testrepo",
-				description: "just a test repo nothing to see here...",
+				GitRepository: &GitRepository{
+					Name:        "testrepo",
+					Description: "just a test repo nothing to see here...",
+				},
 			},
 			want: &GitRepository{
 				Name: "testrepo",
@@ -64,7 +65,7 @@ func TestFakeProvider_CreateRepository(t *testing.T) {
 			f := &FakeProvider{
 				Repositories: tt.fields.Repositories,
 			}
-			got, err := f.CreateRepository(tt.args.name, tt.args.description)
+			got, err := f.CreateRepository(tt.args.GitRepository)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FakeProvider.CreateRepository() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -3,8 +3,6 @@ package provider
 import (
 	"fmt"
 	"sync"
-
-	"github.com/sirupsen/logrus"
 )
 
 type FakeIssue struct {
@@ -34,22 +32,22 @@ func NewFakeProvider() GitProvider {
 	return provider
 }
 
-func (f *FakeProvider) CreateRepository(name, description string) (*GitRepository, error) {
+// CreateRepository creates a new Fake repository
+func (f *FakeProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository, error) {
 	gitRepo := &GitRepository{
-		Name: name,
+		Name: srcRepo.Name,
 	}
 
 	repo := &FakeRepository{
 		GitRepo:     gitRepo,
 		Private:     true,
-		Description: description,
+		Description: srcRepo.Description,
 		Issues:      &sync.Map{},
 		Labels:      []*GitLabel{},
 		issueCount:  0,
 	}
-	logrus.WithField("repo", gitRepo.Name).Info("creating repo")
 
-	result, loaded := f.Repositories.LoadOrStore(name, repo)
+	result, loaded := f.Repositories.LoadOrStore(srcRepo.Name, repo)
 	if loaded {
 		return nil, fmt.Errorf("repository %s already exists", (*result.(*FakeRepository)).GitRepo.Name)
 	}
@@ -57,6 +55,12 @@ func (f *FakeProvider) CreateRepository(name, description string) (*GitRepositor
 	return gitRepo, nil
 }
 
+// Migratre repo migrates a git repo from an existing provider
+func (f *FakeProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
+	return "complete", nil
+}
+
+// CreateIssue creates a new fake issue
 func (f *FakeProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	fakeRepo, ok := f.Repositories.Load(issue.Repo)
 	if !ok {
@@ -70,17 +74,12 @@ func (f *FakeProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 		Comments: []*GitIssueComment{},
 	}
 
-	// logrus.WithFields(logrus.Fields{
-	// 	"IID":   issue.Number,
-	// 	"issue": issue.Title,
-	// 	"state": issue.State,
-	// }).Info("creating issue")
-
 	fakeRepo.(*FakeRepository).Issues.Store(issue.Number, newIssue)
 
 	return issue, nil
 }
 
+// CreateIssueComment creates a new fake issue comment
 func (f *FakeProvider) CreateIssueComment(comment *GitIssueComment) error {
 	number := comment.IssueNum
 
@@ -89,11 +88,6 @@ func (f *FakeProvider) CreateIssueComment(comment *GitIssueComment) error {
 	if !ok {
 		return fmt.Errorf("repository '%s' not found", comment.Repo)
 	}
-
-	// logrus.WithFields(logrus.Fields{
-	// 	"repo":    comment.Repo,
-	// 	"comment": comment.Body,
-	// }).Info("creating comment")
 
 	repoIssue, ok := fakeRepo.(*FakeRepository).Issues.Load(number)
 	if !ok {
@@ -104,6 +98,7 @@ func (f *FakeProvider) CreateIssueComment(comment *GitIssueComment) error {
 	return nil
 }
 
+// CreateLabel creates a new fake issue label
 func (f *FakeProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 	fakeRepo, ok := f.Repositories.Load(label.Repo)
 	if !ok {
@@ -111,29 +106,32 @@ func (f *FakeProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 	}
 	repo := fakeRepo.(*FakeRepository)
 
-	// logrus.WithFields(logrus.Fields{
-	// 	"repo":  label.Repo,
-	// 	"label": label.Name,
-	// 	"color": label.Color,
-	// }).Info("creating label")
-
 	repo.Labels = append(repo.Labels, label)
 
 	return label, nil
 }
 
+// GetAuthToken returns a string with a user's api authentication token
+func (f *FakeProvider) GetAuthToken() string {
+	return ""
+}
+
+// GetRepositories gets the fake provider's repositories
 func (f *FakeProvider) GetRepositories() ([]*GitRepository, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
+// GetIssues gets the fake provider's issues
 func (f *FakeProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
+// GetComments gets the fake provider's comments
 func (f *FakeProvider) GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
+// GetLabels gets the fake provider's labels
 func (f *FakeProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	return nil, fmt.Errorf("not implemented")
 }

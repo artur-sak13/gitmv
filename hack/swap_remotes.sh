@@ -1,39 +1,34 @@
 #!/usr/bin/env bash
-
 set -e
 set -o pipefail
 
 main() {
-  mapfile -t dirs < <(find "${HOME}" -name ".git")
+  mapfile -t dirs < <(find "${HOME}" -maxdepth 4 -name ".git" ! -path "*vim*" -type d -exec dirname {} \; -prune 2>/dev/null)
 
   for dir in "${dirs[@]}"; do
-    dir=$(dirname "$dir")
-    # base=$(basename "$dir")
-
     (
       cd "$dir"
+
       local base_url
-      base_url=$(git config --get remote.origin.url)
-      # strip .git from end of url
-      base_url=${base_url%\.git}
-      base_url=${base_url//git@gitlab\.twopoint\.io:/git@github\.com:/twopt\/}
-      
-      # Validate that this folder is a git folder
-      if ! git branch 2>/dev/null 1>&2 ; then
-        echo "Not a git repo!"
+      local repo
+      base_url=$(git config --get remote.origin.url || true)
+
+      if [[ "$base_url" != git@gitlab.twopoint.io* ]]; then
         exit $?
       fi
-      
-      # Figure out current git branch
-      # git_where=$(command git symbolic-ref -q HEAD || command git name-rev --name-only --no-undefined --always HEAD) 2>/dev/null
-      # git_where=$(command git name-rev --name-only --no-undefined --always HEAD) 2>/dev/null
 
-      # # Remove cruft from branchname
-      # branch=${git_where#refs\/heads\/}
+      repo=$(basename "$base_url")
+      repo_sans_git=$(basename -s .git "$base_url")
 
-      url="$base_url"
-      echo "Setting new remote for $url"
+      echo -e "\033[33m${base_url}\033[0m -> \033[32mgit@github.com:twopt/$repo\033[0m"
+      git remote set-url origin "git@github.com:twopt/$repo" &>/dev/null || (echo "failed to set remote URL for $repo_sans_git" && exit 1)
+
     )
   done
+
+  echo
+  echo "All remotes updated!"
+  echo
 }
+
 main

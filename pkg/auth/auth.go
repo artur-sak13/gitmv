@@ -22,18 +22,20 @@
 
 package auth
 
-// ID
+// ID stores authentication data for a user/organization
 type ID struct {
-	URL   string
-	Token string
-	Owner string
+	URL        string
+	Token      string
+	Owner      string
+	SSHKeyPath string
 }
 
-// NewAuthID
-func NewAuthID(url, token, owner string) *ID {
+// NewAuthID creates a new authentication ID
+func NewAuthID(url, token, keypath, owner string) *ID {
 	return &ID{
-		URL:   url,
-		Token: token,
-		Owner: owner,
+		URL:        url,
+		Token:      token,
+		Owner:      owner,
+		SSHKeyPath: keypath,
 	}
 }

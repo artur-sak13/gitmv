@@ -25,17 +25,19 @@ package provider
 import "time"
 
 type (
-	// GitRepository
+	// GitRepository stores general git repository data
 	GitRepository struct {
-		Name     string
-		HTMLURL  string
-		CloneURL string
-		SSHURL   string
-		Fork     bool
-		Empty    bool
-		PID      int
+		Name        string
+		Description string
+		CloneURL    string
+		SSHURL      string
+		Owner       string
+		Archived    bool
+		Fork        bool
+		Empty       bool
+		PID         int
 	}
-	// GitIssue
+	// GitIssue stores general git SaaS issue data
 	GitIssue struct {
 		Repo      string
 		PID       int
@@ -47,7 +49,22 @@ type (
 		User      *GitUser
 		Assignees []GitUser
 	}
-	// GitIssueComment
+	// GitLabel stores general git SaaS label data
+	GitLabel struct {
+		Repo        string
+		Name        string
+		Color       string
+		Description string
+	}
+
+	// GitUser stores general git SaaS user data
+	GitUser struct {
+		Login string
+		Name  string
+		Email string
+	}
+
+	// GitIssueComment stores general SaaS git issue comment data
 	GitIssueComment struct {
 		Repo      string
 		IssueNum  int
@@ -56,22 +73,9 @@ type (
 		CreatedAt time.Time
 		UpdatedAt time.Time
 	}
-	// GitUser
-	GitUser struct {
-		Login string
-		Name  string
-		Email string
-	}
-	// GitLabel
-	GitLabel struct {
-		Repo        string
-		Name        string
-		Color       string
-		Description string
-	}
 )
 
-// ToGitLabels
+// ToGitLabels converts a list of strings into a list of GitLabels
 func ToGitLabels(names []string) []GitLabel {
 	answer := []GitLabel{}
 	for _, n := range names {
@@ -80,7 +84,7 @@ func ToGitLabels(names []string) []GitLabel {
 	return answer
 }
 
-// ToGitLabelStringSlice
+// ToGitLabelStringSlice converts a list of GitLabels to a list of strings
 func ToGitLabelStringSlice(labels []GitLabel) *[]string {
 	labelStrings := []string{}
 	for _, label := range labels {
@@ -92,7 +96,7 @@ func ToGitLabelStringSlice(labels []GitLabel) *[]string {
 	return &labelStrings
 }
 
-// UserToString
+// UserToString converts a list of GitUsers to a pointer to a slice of user strings
 func UsersToString(users []GitUser) *[]string {
 	var result []string
 	for _, user := range users {

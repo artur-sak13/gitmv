@@ -24,6 +24,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/artur-sak13/gitmv/pkg/auth"
@@ -31,7 +32,7 @@ import (
 	gitlab "github.com/xanzy/go-gitlab"
 )
 
-// GitlabProvider
+// GitlabProvider implements the provider interface for GitLab
 type GitlabProvider struct {
 	Client  *gitlab.Client
 	Context context.Context
@@ -48,7 +49,7 @@ func NewGitlabProvider(id *auth.ID) (GitProvider, error) {
 			return nil, err
 		}
 	}
-	return WithGitlabClient(id, client), nil
+	return WithGitlabClient(client, id), nil
 }
 
 // IsHosted checks if the specified URL is a Git SaaS provider
@@ -59,7 +60,7 @@ func IsHosted(u string) bool {
 
 // WithGitlabClient creates a new GitProvider with a Gitlab client
 // This function is exported to create mock clients in tests
-func WithGitlabClient(id *auth.ID, client *gitlab.Client) GitProvider {
+func WithGitlabClient(client *gitlab.Client, id *auth.ID) GitProvider {
 	return &GitlabProvider{
 		Client: client,
 		ID:     id,
@@ -93,14 +94,20 @@ func (g *GitlabProvider) GetRepositories() ([]*GitRepository, error) {
 }
 
 func fromGitlabProject(project *gitlab.Project) *GitRepository {
+	owner := ""
+	if project.Owner != nil {
+		owner = project.Owner.Username
+	}
 	return &GitRepository{
-		Name:     project.Name,
-		HTMLURL:  project.WebURL,
-		SSHURL:   project.SSHURLToRepo,
-		CloneURL: project.HTTPURLToRepo,
-		Fork:     project.ForkedFromProject != nil,
-		Empty:    project.Statistics.CommitCount == 0,
-		PID:      project.ID,
+		Name:        project.Name,
+		Description: project.Description,
+		SSHURL:      project.SSHURLToRepo,
+		Owner:       owner,
+		Archived:    project.Archived,
+		CloneURL:    project.HTTPURLToRepo,
+		Fork:        project.ForkedFromProject != nil,
+		Empty:       project.Statistics.CommitCount == 0,
+		PID:         project.ID,
 	}
 }
 
@@ -217,6 +224,8 @@ func fromGitlabComment(repo string, issueNum int, note *gitlab.Note) *GitIssueCo
 		Repo:     repo,
 		IssueNum: issueNum,
 		User: GitUser{
+			Login: note.Author.Username,
+			Name:  note.Author.Name,
 			Email: note.Author.Email,
 		},
 		Body:      note.Body,
@@ -244,6 +253,11 @@ func (g *GitlabProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	}
 
 	return fromGitlabLabels(repo, list), nil
+}
+
+// GetAuthToken returns a string with a user's api authentication token
+func (g *GitlabProvider) GetAuthToken() string {
+	return g.ID.Token
 }
 
 func fromGitlabLabels(repo string, labels []*gitlab.Label) []*GitLabel {
@@ -296,25 +310,31 @@ func lastPage(resp *gitlab.Response) bool {
 	return resp == nil || resp.CurrentPage >= resp.TotalPages || resp.NextPage == 0
 }
 
-// CreateRepository
-func (g *GitlabProvider) CreateRepository(name, description string) (*GitRepository, error) {
+// CreateRepository creates a new GitLab repository
+func (g *GitlabProvider) CreateRepository(repo *GitRepository) (*GitRepository, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("gitlab CreateRepository not implemented")
 }
 
-// CreateIssue
+// Migratre repo migrates a git repo from an existing provider
+func (g *GitlabProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
+	return "", fmt.Errorf("gitlab MigrateRepo not implemented")
+}
+
+// CreateIssue creates a new GitLab issue
 func (g *GitlabProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("gitlab CreateIssue not implemented")
 }
 
-// CreateIssueComment
+// CreateIssueComment creates a new GitLab issue note/comment
 func (g *GitlabProvider) CreateIssueComment(comment *GitIssueComment) error {
 	// TODO: Implement
-	return nil
+	return fmt.Errorf("gitlab CreateIssueComment not implemented")
 }
 
+// CreateLabel creates a new GitLab issue label
 func (g *GitlabProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("gitlab CreateLabel not implemented")
 }

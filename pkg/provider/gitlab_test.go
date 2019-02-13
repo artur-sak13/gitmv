@@ -72,10 +72,10 @@ func setup(s *GitlabProviderSuite) (*http.ServeMux, *httptest.Server, *provider.
 	c := gitlab.NewClient(nil, "")
 	_ = c.SetBaseURL(server.URL)
 
-	id := auth.NewAuthID(server.URL, "test-token", gitlabOrgName)
+	id := auth.NewAuthID(server.URL, "test-token", "/fake/.ssh/id_rsa", gitlabOrgName)
 
 	// Gitlab provider that we want to test
-	prov := provider.WithGitlabClient(id, c)
+	prov := provider.WithGitlabClient(c, id)
 
 	return mux, server, prov.(*provider.GitlabProvider)
 }
@@ -94,15 +94,6 @@ func configureGitlabMock(s *GitlabProviderSuite, mux *http.ServeMux) {
 		s.Require().Nil(err)
 		_, _ = w.Write(src)
 	})
-
-	// gitlabRouter := testutil.Router{
-	// 	fmt.Sprintf("/api/v4/projects/%s?page=1&per_page=100&statistics=true", gitlabProjectID): testutil.MethodMap{
-	// 		"GET": "project.json",
-	// 	},
-	// }
-	// for path, methodMap := range gitlabRouter {
-	// 	mux.HandleFunc(path, testutil.GetMockAPIResponseFromFile("test_data/gitlab", methodMap))
-	// }
 }
 
 func TestIsHosted(t *testing.T) {
@@ -166,29 +157,24 @@ func (s *GitlabProviderSuite) TestListRepositories() {
 		expectedRepoName string
 		expectedSSHURL   string
 		expectedHTTPSURL string
-		expectedHTMLURL  string
 	}{
 		{
-			"Repository without organization",
-			gitlabUserName, "userproject",
-			"git@gitlab.com:tester/userproject.git",
-			"https://gitlab.com/tester/userproject.git",
-			"https://gitlab.com/tester/userproject",
+			testDescription: "Repository without organization",
+			org:             gitlabUserName, expectedRepoName: "userproject",
+			expectedSSHURL:   "git@gitlab.com:tester/userproject.git",
+			expectedHTTPSURL: "https://gitlab.com/tester/userproject.git",
 		},
 		{
-			"Test Repository",
-			"", gitlabProjectName,
-			"git@gitlab.com:test-user/test-project.git",
-			"https://gitlab.com/test-user/test-project.git",
-			"https://gitlab.com/test-user/test-project",
+			testDescription: "Test Repository",
+			org:             "", expectedRepoName: gitlabProjectName,
+			expectedSSHURL:   "git@gitlab.com:test-user/test-project.git",
+			expectedHTTPSURL: "https://gitlab.com/test-user/test-project.git",
 		},
 		{
-			"Organization Repository",
-			gitlabOrgName,
-			"orgproject",
-			"git@gitlab.com:testorg/orgproject.git",
-			"https://gitlab.com/testorg/orgproject.git",
-			"https://gitlab.com/testorg/orgproject",
+			testDescription: "Organization Repository",
+			org:             gitlabOrgName, expectedRepoName: "orgproject",
+			expectedSSHURL:   "git@gitlab.com:testorg/orgproject.git",
+			expectedHTTPSURL: "https://gitlab.com/testorg/orgproject.git",
 		},
 	}
 	for i, tt := range tests {
@@ -198,7 +184,6 @@ func (s *GitlabProviderSuite) TestListRepositories() {
 		require.Equal(tt.expectedRepoName, repositories[i].Name)
 		require.Equal(tt.expectedSSHURL, repositories[i].SSHURL)
 		require.Equal(tt.expectedHTTPSURL, repositories[i].CloneURL)
-		require.Equal(tt.expectedHTMLURL, repositories[i].HTMLURL)
 	}
 }
 

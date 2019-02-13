@@ -37,6 +37,7 @@ import (
 )
 
 // TODO: Make sure to retry on failure and attempt to "sync" updates between runs
+// GitHubProvider implements the provider interface for GitHub
 type GithubProvider struct {
 	Client  *github.Client
 	Context context.Context
@@ -45,7 +46,7 @@ type GithubProvider struct {
 	retries int
 }
 
-// NewGithubProvider
+// NewGithubProvider creates a new GitHub clients which implements the provider interface
 func NewGithubProvider(ctx context.Context, id *auth.ID) (GitProvider, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: id.Token},
@@ -55,7 +56,7 @@ func NewGithubProvider(ctx context.Context, id *auth.ID) (GitProvider, error) {
 	return WithGithubClient(ctx, client, id), nil
 }
 
-// WithGithubClient
+// WithGithubClient creates a new GitProvider with a GitHub client
 func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) GitProvider {
 	return &GithubProvider{
 		Client:  client,
@@ -65,17 +66,18 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 	}
 }
 
-// CreateRepository
-func (g *GithubProvider) CreateRepository(name, description string) (*GitRepository, error) {
+// CreateRepository creates a new GitHub repository
+func (g *GithubProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository, error) {
 	repo := &github.Repository{
-		Name:        github.String(name),
+		Name:        github.String(srcRepo.Name),
 		Private:     github.Bool(true),
-		Description: github.String(description),
+		Description: github.String(srcRepo.Description),
+		Archived:    github.Bool(srcRepo.Archived),
 	}
-	if !g.RepositoryExists(name) {
+	if !g.RepositoryExists(srcRepo.Name) {
 		r, _, err := g.Client.Repositories.Create(g.Context, g.ID.Owner, repo)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, name, err)
+			return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, srcRepo.Name, err)
 		}
 		return fromGithubRepo(r), nil
 	}
@@ -84,15 +86,18 @@ func (g *GithubProvider) CreateRepository(name, description string) (*GitReposit
 
 func fromGithubRepo(repo *github.Repository) *GitRepository {
 	return &GitRepository{
-		Name:     repo.GetName(),
-		CloneURL: repo.GetCloneURL(),
-		HTMLURL:  repo.GetHTMLURL(),
-		SSHURL:   repo.GetSSHURL(),
-		Fork:     repo.GetFork(),
+		Name:        repo.GetName(),
+		Description: repo.GetDescription(),
+		CloneURL:    repo.GetCloneURL(),
+		SSHURL:      repo.GetSSHURL(),
+		Archived:    repo.GetArchived(),
+		Fork:        repo.GetFork(),
+		Empty:       repo.GetSize() == 0,
+		PID:         int(repo.GetID()),
 	}
 }
 
-// RepositoryExists
+// RepositoryExists checks if a given repostory already exists in GitHub
 func (g *GithubProvider) RepositoryExists(name string) bool {
 	_, r, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
 	if err == nil {
@@ -101,7 +106,7 @@ func (g *GithubProvider) RepositoryExists(name string) bool {
 	return r != nil && r.StatusCode == 404
 }
 
-// CreateIssue
+// CreateIssue creates a new GitHub issue
 func (g *GithubProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	issueRequest := &github.IssueRequest{
 		Title:     &issue.Title,
@@ -155,10 +160,13 @@ func fromGithubUser(user *github.User) *GitUser {
 	}
 }
 
-// CreateIssueComment
+// CreateIssueComment creates a new GitHub issue comment
 func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
 	issueComment := &github.IssueComment{
-		User:      &github.User{Email: &comment.User.Email},
+		User: &github.User{
+
+			Email: &comment.User.Email,
+		},
 		Body:      &comment.Body,
 		CreatedAt: &comment.CreatedAt,
 		UpdatedAt: &comment.UpdatedAt,
@@ -170,7 +178,7 @@ func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
 	return nil
 }
 
-// CreateLabel
+// CreateLabel creates a new GitHub issue label
 func (g *GithubProvider) CreateLabel(srcLabel *GitLabel) (*GitLabel, error) {
 	label := &github.Label{
 		Name:        &srcLabel.Name,
@@ -193,26 +201,34 @@ func fromGithubLabel(label *github.Label) *GitLabel {
 	}
 }
 
-// MigrateRepo
-func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) error {
+// MigrateRepo migrates a repo from an existing provider into GitHub
+func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
 	u, err := url.Parse(repo.CloneURL)
 	if err != nil {
-		return fmt.Errorf("could not parse repo name into owner and repo %v", err)
+		return "", fmt.Errorf("could not parse repo name into owner and repo %v", err)
 	}
 
 	// Must create repository before running import
 	repoImport := &github.Import{
 		VCS:         github.String("git"),
 		VCSURL:      &repo.CloneURL,
-		VCSUsername: &g.ID.Owner,
+		VCSUsername: &repo.Owner,
 		VCSPassword: &token,
 	}
 	result, _, err := g.Client.Migrations.StartImport(g.Context, g.ID.Owner, u.RequestURI(), repoImport)
 	if err != nil {
-		return err
+		return "", err
 	}
-	logrus.Infof("importing %s", *result.Status)
-	return nil
+	return *result.Status, nil
+}
+
+// GetImportProgress checks the progress of a previously started GitHub import
+func (g *GithubProvider) GetImportProgress(repoName string) (string, error) {
+	migration, _, err := g.Client.Migrations.ImportProgress(g.Context, g.ID.Owner, repoName)
+	if err != nil {
+		return "", err
+	}
+	return *migration.Status, nil
 }
 
 type retryAbort struct{ error }
@@ -257,26 +273,31 @@ func (g *GithubProvider) retry(action string, call func() (*github.Response, err
 	return resp, err
 }
 
-// GetRepositories
+// GetAuthToken returns a string with a user's api authentication token
+func (g *GithubProvider) GetAuthToken() string {
+	return g.ID.Token
+}
+
+// GetRepositories retrieves a list of GitHub repositories for the organization/owner
 func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("github GetRepositories not implemented")
 }
 
-// GetIssues
+// GetIssues retrieves a list of issues associated with a GitHub repository
 func (g *GithubProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("github GetIssues not implemented")
 }
 
-// GetComments
+// GetComments retrieves a list of issue comments associated with a GitHub issue
 func (g *GithubProvider) GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("github GetComments not implemented")
 }
 
-// GetLabels
+// GetLabels retrieves a list of labels associated with a GitHub repository
 func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	// TODO: Implement
-	return nil, nil
+	return nil, fmt.Errorf("github GetLabels not implemented")
 }
