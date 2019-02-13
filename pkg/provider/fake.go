@@ -55,7 +55,7 @@ func (f *FakeProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository,
 	return gitRepo, nil
 }
 
-// Migratre repo migrates a git repo from an existing provider
+// MigrateRepo migrates a git repo from an existing provider
 func (f *FakeProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
 	return "complete", nil
 }

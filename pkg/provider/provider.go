@@ -96,7 +96,7 @@ func ToGitLabelStringSlice(labels []GitLabel) *[]string {
 	return &labelStrings
 }
 
-// UserToString converts a list of GitUsers to a pointer to a slice of user strings
+// UsersToString converts a list of GitUsers to a pointer to a slice of user strings
 func UsersToString(users []GitUser) *[]string {
 	var result []string
 	for _, user := range users {

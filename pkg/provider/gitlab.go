@@ -316,7 +316,7 @@ func (g *GitlabProvider) CreateRepository(repo *GitRepository) (*GitRepository, 
 	return nil, fmt.Errorf("gitlab CreateRepository not implemented")
 }
 
-// Migratre repo migrates a git repo from an existing provider
+// MigrateRepo migrates a git repo from an existing provider
 func (g *GitlabProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
 	return "", fmt.Errorf("gitlab MigrateRepo not implemented")
 }
