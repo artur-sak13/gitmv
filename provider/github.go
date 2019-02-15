@@ -203,6 +203,10 @@ func fromGithubLabel(label *github.Label) *GitLabel {
 
 // MigrateRepo migrates a repo from an existing provider into GitHub
 func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
+	status, err := g.GetImportProgress(repo.Name)
+	if err == nil {
+		return status, nil
+	}
 	// Must create repository before running import
 	repoImport := &github.Import{
 		VCS:         github.String("git"),

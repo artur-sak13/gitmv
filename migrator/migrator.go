@@ -166,6 +166,8 @@ func (m *Migrator) processIssues(repo *provider.GitRepository) {
 			if err != nil {
 				logrus.Errorf("error creating issue: %v", err)
 				m.Errors <- fmt.Errorf("failed to create issue: %v", err)
+				wg.Done()
+				return
 			}
 			m.processComments(issue, &wg)
 		}
@@ -193,6 +195,8 @@ func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup)
 			if err != nil {
 				logrus.Errorf("error creating comments for repo %s: %v", issue.Repo, err)
 				m.Errors <- fmt.Errorf("failed to create comment: %v", err)
+				wg.Done()
+				return
 			}
 		}
 		wg.Done()
@@ -222,6 +226,8 @@ func (m *Migrator) processLabels(repo *provider.GitRepository) {
 			if err != nil {
 				logrus.Errorf("error creating label: %v", err)
 				m.Errors <- fmt.Errorf("failed to create label: %v", err)
+				wg.Done()
+				return
 			}
 			wg.Done()
 		}(label)
