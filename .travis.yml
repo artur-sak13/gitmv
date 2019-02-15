@@ -1,56 +1,59 @@
 language: go
 sudo: false
 go:
-  - 1.10.x
+- 1.10.x
 before_install:
-  - go get golang.org/x/lint/golint
-  - go get honnef.co/go/tools/cmd/staticcheck
+- go get golang.org/x/lint/golint
+- go get honnef.co/go/tools/cmd/staticcheck
 jobs:
   include:
-    - script: make all
-    - stage: Run Test Coverage
-      script: make cover
-      after_success: bash <(curl -s https://codecov.io/bash)
-    - stage: Build Release
-      script:
-        - make release
-        - echo "Deploying to GitHub releases ..."
-      deploy:
-        provider: releases
-        file:
-          - cross/gitmv-darwin-amd64
-          - cross/gitmv-darwin-amd64.md5
-          - cross/gitmv-darwin-amd64.sha256
-          - cross/gitmv-darwin-386
-          - cross/gitmv-darwin-386.md5
-          - cross/gitmv-darwin-386.sha256
-          - cross/gitmv-freebsd-amd64
-          - cross/gitmv-freebsd-amd64.md5
-          - cross/gitmv-freebsd-amd64.sha256
-          - cross/gitmv-freebsd-386
-          - cross/gitmv-freebsd-386.md5
-          - cross/gitmv-freebsd-386.sha256
-          - cross/gitmv-linux-arm
-          - cross/gitmv-linux-arm.md5
-          - cross/gitmv-linux-arm.sha256
-          - cross/gitmv-linux-arm64
-          - cross/gitmv-linux-arm64.md5
-          - cross/gitmv-linux-arm64.sha256
-          - cross/gitmv-linux-amd64
-          - cross/gitmv-linux-amd64.md5
-          - cross/gitmv-linux-amd64.sha256
-          - cross/gitmv-linux-386
-          - cross/gitmv-linux-386.md5
-          - cross/gitmv-linux-386.sha256
-          - cross/gitmv-solaris-amd64
-          - cross/gitmv-solaris-amd64.md5
-          - cross/gitmv-solaris-amd64.sha256
-          - cross/gitmv-windows-amd64
-          - cross/gitmv-windows-amd64.md5
-          - cross/gitmv-windows-amd64.sha256
-          - cross/gitmv-windows-386
-          - cross/gitmv-windows-386.md5
-          - cross/gitmv-windows-386.sha256
-        skip_cleanup: true
-        on:
-          tags: true
+  - script: make all
+  - stage: Run Test Coverage
+    script: make cover
+    after_success: bash <(curl -s https://codecov.io/bash)
+  - stage: Build Release
+    script:
+    - make release
+    - echo "Deploying to GitHub releases ..."
+    deploy:
+      provider: releases
+      file:
+      - cross/gitmv-darwin-amd64
+      - cross/gitmv-darwin-amd64.md5
+      - cross/gitmv-darwin-amd64.sha256
+      - cross/gitmv-darwin-386
+      - cross/gitmv-darwin-386.md5
+      - cross/gitmv-darwin-386.sha256
+      - cross/gitmv-freebsd-amd64
+      - cross/gitmv-freebsd-amd64.md5
+      - cross/gitmv-freebsd-amd64.sha256
+      - cross/gitmv-freebsd-386
+      - cross/gitmv-freebsd-386.md5
+      - cross/gitmv-freebsd-386.sha256
+      - cross/gitmv-linux-arm
+      - cross/gitmv-linux-arm.md5
+      - cross/gitmv-linux-arm.sha256
+      - cross/gitmv-linux-arm64
+      - cross/gitmv-linux-arm64.md5
+      - cross/gitmv-linux-arm64.sha256
+      - cross/gitmv-linux-amd64
+      - cross/gitmv-linux-amd64.md5
+      - cross/gitmv-linux-amd64.sha256
+      - cross/gitmv-linux-386
+      - cross/gitmv-linux-386.md5
+      - cross/gitmv-linux-386.sha256
+      - cross/gitmv-solaris-amd64
+      - cross/gitmv-solaris-amd64.md5
+      - cross/gitmv-solaris-amd64.sha256
+      - cross/gitmv-windows-amd64
+      - cross/gitmv-windows-amd64.md5
+      - cross/gitmv-windows-amd64.sha256
+      - cross/gitmv-windows-386
+      - cross/gitmv-windows-386.md5
+      - cross/gitmv-windows-386.sha256
+      skip_cleanup: true
+      on:
+        tags: true
+notifications:
+  slack:
+    secure: IEt62nSjuErH/e7Ytb2yJWoODjx8Dw3+G8Udqbe2yFIHbGTiUnSswLrTjZLciyr+WLPiqAYZq2y19mhs+JhzyKwi8GlqeaMfXfAd8yXE2NMKVPcw/vT347zYwDtihRIFHrTdcU7f1o3Xn6ajLhhGc84V+Dl/vU9sfrUXp48vGSv1csr8W4xjo6qtlyd6DMvbHIWfCylPam4Tq4IsTqeJE1w3BqZQLzuSpafMSYwl10+rpSOtKBksY1un8dXVVd/WvVT2CqlEYP7T1LegdHgnN3DthHvn409DospGS9loOkblpFaRzGwkcxALastsD++5gzUne2skTOwkR4Ra0v+qmooz+vrFGY4SGmXkfXUXVpw+FRDI/nOjOm/QrSHST2G1joey0HmjzlFllh04GjQ0m0n6p5uJ4iYwYRGxOoEYcRjwDDBdMFQel0+nc6M5AmHqce85eD+7SW5QjIxAeETmEz8AKA9vPK/xyAmnE/qjz4nngSf9xF7M3GyHpY/zo/gbCi40AXSNuNpzpBzscUsENaLj1yWOgT8jEu+/AGqKs8+B/Q5XPyRd6nTx8333lEYFXWiNaeYrui/boQf9IRzx0gagmK0HxAOCh2yTSvmw6OVBlwqS7u/KBGjR+eb6qFHzaZBxvpbR61SaNSaIaJWzM4dOBbwMzy8FtVoofHEyMO4=
