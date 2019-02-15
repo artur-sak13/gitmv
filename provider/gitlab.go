@@ -296,16 +296,6 @@ func depaginate(closure getterFn) (*gitlab.Response, error) {
 	return resp, err
 }
 
-func filter(projects []*gitlab.Project, fn func(p *gitlab.Project) bool) []*gitlab.Project {
-	projs := []*gitlab.Project{}
-	for _, project := range projects {
-		if fn(project) {
-			projs = append(projs, project)
-		}
-	}
-	return projs
-}
-
 func lastPage(resp *gitlab.Response) bool {
 	return resp == nil || resp.CurrentPage >= resp.TotalPages || resp.NextPage == 0
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/artur-sak13/gitmv/auth"
+
 	"github.com/google/go-github/v21/github"
 )
 
@@ -39,9 +40,9 @@ func setup() (*GithubProvider, *http.ServeMux, string, func()) {
 	server := httptest.NewServer(apiHandler)
 
 	client := github.NewClient(nil)
-	url, _ := url.Parse(server.URL + baseURLPath + "/")
-	client.BaseURL = url
-	client.UploadURL = url
+	u, _ := url.Parse(server.URL + baseURLPath + "/")
+	client.BaseURL = u
+	client.UploadURL = u
 
 	id := auth.NewAuthID(server.URL, "p", "~/fake/.ssh/id_rsa", githubOrgName)
 	prov := WithGithubClient(context.Background(), client, id)

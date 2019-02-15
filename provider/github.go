@@ -25,13 +25,10 @@ package provider
 import (
 	"context"
 	"fmt"
-	"math"
-	"time"
 
 	"github.com/artur-sak13/gitmv/auth"
 
 	"github.com/google/go-github/v21/github"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
@@ -99,10 +96,7 @@ func fromGithubRepo(repo *github.Repository) *GitRepository {
 // RepositoryExists checks if a given repostory already exists in GitHub
 func (g *GithubProvider) RepositoryExists(name string) bool {
 	_, _, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
-	if err == nil {
-		return true
-	}
-	return false
+	return err == nil
 	// return r != nil && r.StatusCode == 404
 }
 
@@ -230,47 +224,47 @@ func (g *GithubProvider) GetImportProgress(repoName string) (string, error) {
 	return migration.GetStatus(), nil
 }
 
-type retryAbort struct{ error }
+// type retryAbort struct{ error }
 
-func (r *retryAbort) Error() string {
-	return fmt.Sprintf("aborting retry loop: %v", r.error)
-}
+// func (r *retryAbort) Error() string {
+// 	return fmt.Sprintf("aborting retry loop: %v", r.error)
+// }
 
-func (g *GithubProvider) sleepForAttempt(retryCount int) {
-	maxDelay := 20 * time.Second
-	delay := time.Second * time.Duration(math.Exp2(float64(retryCount)))
-	if delay > maxDelay {
-		delay = maxDelay
-	}
-	time.Sleep(delay)
-}
+// func (g *GithubProvider) sleepForAttempt(retryCount int) {
+// 	maxDelay := 20 * time.Second
+// 	delay := time.Second * time.Duration(math.Exp2(float64(retryCount)))
+// 	if delay > maxDelay {
+// 		delay = maxDelay
+// 	}
+// 	time.Sleep(delay)
+// }
 
-func (g *GithubProvider) retry(action string, call func() (*github.Response, error)) (*github.Response, error) {
-	var err error
-	var resp *github.Response
+// func (g *GithubProvider) retry(action string, call func() (*github.Response, error)) (*github.Response, error) {
+// 	var err error
+// 	var resp *github.Response
 
-	for retryCount := 0; retryCount <= g.retries; retryCount++ {
-		if resp, err = call(); err == nil {
-			return resp, nil
-		}
-		switch err := err.(type) {
-		case *github.RateLimitError:
-			return resp, err
-		case *github.TwoFactorAuthError:
-			return resp, err
-		case *retryAbort:
-			return resp, err
-		}
+// 	for retryCount := 0; retryCount <= g.retries; retryCount++ {
+// 		if resp, err = call(); err == nil {
+// 			return resp, nil
+// 		}
+// 		switch err := err.(type) {
+// 		case *github.RateLimitError:
+// 			return resp, err
+// 		case *github.TwoFactorAuthError:
+// 			return resp, err
+// 		case *retryAbort:
+// 			return resp, err
+// 		}
 
-		if retryCount == g.retries {
-			return resp, err
-		}
-		logrus.Errorf("error %s: %v. Retrying...\n", action, err)
+// 		if retryCount == g.retries {
+// 			return resp, err
+// 		}
+// 		logrus.Errorf("error %s: %v. Retrying...\n", action, err)
 
-		g.sleepForAttempt(retryCount)
-	}
-	return resp, err
-}
+// 		g.sleepForAttempt(retryCount)
+// 	}
+// 	return resp, err
+// }
 
 // GetAuthToken returns a string with a user's api authentication token
 func (g *GithubProvider) GetAuth() *auth.ID {

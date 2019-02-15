@@ -94,6 +94,7 @@ func TestFakeProvider_CreateLabel(t *testing.T) {
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			f := &FakeProvider{
 				Repositories: tt.fields.Repositories,
@@ -126,6 +127,7 @@ func TestFakeProvider_CreateIssueComment(t *testing.T) {
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			f := &FakeProvider{
 				Repositories: tt.fields.Repositories,
@@ -221,6 +223,7 @@ func TestFakeProvider_CreateIssue(t *testing.T) {
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			f := &FakeProvider{
 				Repositories: tt.fields.Repositories,

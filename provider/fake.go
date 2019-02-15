@@ -28,6 +28,8 @@ type FakeProvider struct {
 	Repositories *sync.Map
 }
 
+const status = "complete"
+
 // NewFakeProvider creates a new fake provider
 func NewFakeProvider() GitProvider {
 	provider := &FakeProvider{
@@ -54,7 +56,7 @@ func (f *FakeProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository,
 
 	result, loaded := f.Repositories.LoadOrStore(srcRepo.Name, repo)
 	if loaded {
-		return nil, fmt.Errorf("repository %s already exists", (*result.(*FakeRepository)).GitRepo.Name)
+		return nil, fmt.Errorf("repository %s already exists", result.(*FakeRepository).GitRepo.Name)
 	}
 
 	return gitRepo, nil
@@ -62,11 +64,11 @@ func (f *FakeProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository,
 
 // MigrateRepo migrates a git repo from an existing provider
 func (f *FakeProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
-	return "complete", nil
+	return status, nil
 }
 
 func (f *FakeProvider) GetImportProgress(repo string) (string, error) {
-	return "complete", nil
+	return status, nil
 }
 
 // CreateIssue creates a new fake issue

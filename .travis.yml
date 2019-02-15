@@ -8,7 +8,6 @@ env:
 before_install:
   - go get golang.org/x/lint/golint
   - go get honnef.co/go/tools/cmd/staticcheck
-  - go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 jobs:
   include:
     - script: make test

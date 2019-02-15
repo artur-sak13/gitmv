@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/artur-sak13/gitmv/auth"
+
 	"github.com/sirupsen/logrus"
 
 	"gopkg.in/src-d/go-billy.v4/memfs"
