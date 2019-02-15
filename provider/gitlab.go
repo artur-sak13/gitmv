@@ -99,7 +99,7 @@ func fromGitlabProject(project *gitlab.Project) *GitRepository {
 		owner = project.Owner.Username
 	}
 	return &GitRepository{
-		Name:        project.Name,
+		Name:        project.Path,
 		Description: project.Description,
 		SSHURL:      project.SSHURLToRepo,
 		Owner:       owner,
