@@ -7,7 +7,7 @@ before_install:
 - go get honnef.co/go/tools/cmd/staticcheck
 jobs:
   include:
-  - script: make all
+  - script: make test
   - stage: Run Test Coverage
     script: make cover
     after_success: bash <(curl -s https://codecov.io/bash)
