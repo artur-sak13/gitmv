@@ -23,12 +23,13 @@ package migrator
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/artur-sak13/gitmv/pkg/provider"
+	"github.com/artur-sak13/gitmv/provider"
 )
 
 // Migrator stores the src and target git providers and an error channel
@@ -56,6 +57,7 @@ func (m *Migrator) Run() error {
 
 	start := time.Now()
 	wg := sync.WaitGroup{}
+	importwg := sync.WaitGroup{}
 	count := 0
 
 	for _, repo := range repos {
@@ -63,35 +65,46 @@ func (m *Migrator) Run() error {
 			continue
 		}
 		wg.Add(1)
+		importwg.Add(1)
 		count++
 
-		_, err := m.Dest.CreateRepository(repo)
+		destRepo, err := m.Dest.CreateRepository(repo)
 		if err != nil {
 			return fmt.Errorf("error creating repository: %v", err)
 		}
+
 		logrus.WithFields(logrus.Fields{
-			"repo": repo.Name,
-			"url":  repo.SSHURL,
+			"repo": destRepo.Name,
+			"url":  destRepo.CloneURL,
 		}).Infof("creating new repo")
 
-		status, err := m.Dest.MigrateRepo(repo, m.Src.GetAuthToken())
+		status, err := m.Dest.MigrateRepo(repo, m.Src.GetAuth().Token)
 		if err != nil {
 			return fmt.Errorf("error failed to migrate repository: %v", err)
 		}
+
 		logrus.WithFields(logrus.Fields{
 			"repo":   repo.Name,
 			"status": status,
 		}).Infof("importing repo")
 
+		go m.waitForImport(repo.Name, &importwg)
+
 		go func(repo *provider.GitRepository) {
 			m.processIssues(repo)
 			m.processLabels(repo)
+			if err := provider.MigrateWiki(destRepo, m.Dest.GetAuth()); err != nil {
+				m.Errors <- fmt.Errorf("failed to migrate wiki for %s: %v", repo.Name, err)
+			}
 			wg.Done()
 		}(repo)
 
 	}
 	wg.Wait()
 	logrus.Infof("processed %d repositories in %s\n", count, time.Since(start))
+
+	importwg.Wait()
+	logrus.Infof("done waiting for repository imports")
 
 	if len(m.Errors) > 0 {
 		for err := range m.Errors {
@@ -101,6 +114,33 @@ func (m *Migrator) Run() error {
 	}
 
 	return nil
+}
+
+func (m *Migrator) waitForImport(repo string, wg *sync.WaitGroup) {
+	retries := 5
+	for retryCount := 1; retryCount <= retries; retryCount++ {
+		status, err := m.Dest.GetImportProgress(repo)
+		if err != nil {
+			m.Errors <- fmt.Errorf("failed to retrieve import progress: %v", err)
+		}
+		if status == "complete" {
+			logrus.Infof("%s finished importing", repo)
+			wg.Done()
+			return
+		}
+		sleepForAttempt(retryCount)
+	}
+	logrus.Warnf("import status retries exhausted for %s", repo)
+	wg.Done()
+}
+
+func sleepForAttempt(retryCount int) {
+	maxDelay := 20 * time.Second
+	delay := time.Second * time.Duration(math.Exp2(float64(retryCount)))
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	time.Sleep(delay)
 }
 
 func (m *Migrator) processIssues(repo *provider.GitRepository) {

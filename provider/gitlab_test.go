@@ -29,8 +29,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
-	"github.com/artur-sak13/gitmv/pkg/provider"
+	"github.com/artur-sak13/gitmv/auth"
+	"github.com/artur-sak13/gitmv/provider"
 
 	"gotest.tools/assert"
 

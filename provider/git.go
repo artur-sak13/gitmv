@@ -27,7 +27,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
+	"github.com/artur-sak13/gitmv/auth"
 	"github.com/sirupsen/logrus"
 
 	"gopkg.in/src-d/go-billy.v4/memfs"
@@ -37,7 +37,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
-func migrateWiki(repo *GitRepository, owner string, id auth.ID) error {
+func MigrateWiki(repo *GitRepository, id *auth.ID) error {
 	fs := memfs.New()
 
 	pks, err := ssh.NewPublicKeysFromFile("git", id.SSHKeyPath, "")
@@ -61,7 +61,7 @@ func migrateWiki(repo *GitRepository, owner string, id auth.ID) error {
 		return fmt.Errorf("error removing git remote %v", err)
 	}
 
-	newWikiURL := fmt.Sprintf("git@github.com:%s/%s.wiki.git", owner, repo.Name)
+	newWikiURL := fmt.Sprintf("git@github.com:%s/%s.wiki.git", id.Owner, repo.Name)
 	_, err = r.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{newWikiURL},

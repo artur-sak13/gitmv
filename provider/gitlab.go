@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
+	"github.com/artur-sak13/gitmv/auth"
 
 	gitlab "github.com/xanzy/go-gitlab"
 )
@@ -111,7 +111,7 @@ func fromGitlabProject(project *gitlab.Project) *GitRepository {
 	}
 }
 
-// GetComments retrieves a full list of Issues for a project
+// GetIssues retrieves a full list of Issues for a project
 // For >100 issues this _depaginates_ the responses and appends them to one slice
 func (g *GitlabProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
 	var result []*gitlab.Issue
@@ -256,8 +256,8 @@ func (g *GitlabProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 }
 
 // GetAuthToken returns a string with a user's api authentication token
-func (g *GitlabProvider) GetAuthToken() string {
-	return g.ID.Token
+func (g *GitlabProvider) GetAuth() *auth.ID {
+	return g.ID
 }
 
 func fromGitlabLabels(repo string, labels []*gitlab.Label) []*GitLabel {
@@ -319,6 +319,10 @@ func (g *GitlabProvider) CreateRepository(repo *GitRepository) (*GitRepository, 
 // MigrateRepo migrates a git repo from an existing provider
 func (g *GitlabProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
 	return "", fmt.Errorf("gitlab MigrateRepo not implemented")
+}
+
+func (g *GitlabProvider) GetImportProgress(repo string) (string, error) {
+	return "", fmt.Errorf("gitlab GetImportProgress not implemented")
 }
 
 // CreateIssue creates a new GitLab issue

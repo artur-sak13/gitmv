@@ -22,6 +22,8 @@
 
 package provider
 
+import "github.com/artur-sak13/gitmv/auth"
+
 // GitProvider
 type GitProvider interface {
 	// Create methods
@@ -44,7 +46,9 @@ type GitProvider interface {
 
 	GetLabels(pid int, repo string) ([]*GitLabel, error)
 
-	GetAuthToken() string
+	GetAuth() *auth.ID
+
+	GetImportProgress(repo string) (string, error)
 
 	// ValidateRepositoryName(org string, name string) error
 }

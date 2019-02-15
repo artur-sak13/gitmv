@@ -3,13 +3,17 @@ package provider
 import (
 	"fmt"
 	"sync"
+
+	"github.com/artur-sak13/gitmv/auth"
 )
 
+// FakeIssue stores information about git issues and their associated comments
 type FakeIssue struct {
 	Issue    *GitIssue
 	Comments []*GitIssueComment
 }
 
+// FakeRepository stores information about a new git repository
 type FakeRepository struct {
 	GitRepo     *GitRepository
 	Issues      *sync.Map
@@ -19,11 +23,12 @@ type FakeRepository struct {
 	issueCount  int
 }
 
+// FakeProvider stores a thread safe hashmap of repository data
 type FakeProvider struct {
 	Repositories *sync.Map
 }
 
-// NewFakeRepository creates a new fake provider
+// NewFakeProvider creates a new fake provider
 func NewFakeProvider() GitProvider {
 	provider := &FakeProvider{
 		Repositories: &sync.Map{},
@@ -57,6 +62,10 @@ func (f *FakeProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository,
 
 // MigrateRepo migrates a git repo from an existing provider
 func (f *FakeProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
+	return "complete", nil
+}
+
+func (f *FakeProvider) GetImportProgress(repo string) (string, error) {
 	return "complete", nil
 }
 
@@ -112,8 +121,8 @@ func (f *FakeProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 }
 
 // GetAuthToken returns a string with a user's api authentication token
-func (f *FakeProvider) GetAuthToken() string {
-	return ""
+func (f *FakeProvider) GetAuth() *auth.ID {
+	return auth.NewAuthID("git.example.com", "test-token", "/fake/.ssh/id_rsa", "fakeorg")
 }
 
 // GetRepositories gets the fake provider's repositories

@@ -30,10 +30,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/artur-sak13/gitmv/pkg/migrator"
+	"github.com/artur-sak13/gitmv/migrator"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
-	"github.com/artur-sak13/gitmv/pkg/provider"
+	"github.com/artur-sak13/gitmv/auth"
+	"github.com/artur-sak13/gitmv/provider"
 
 	"github.com/artur-sak13/gitmv/version"
 
@@ -52,7 +52,9 @@ var (
 	gitlabUser  string
 	keyPath     string
 	customURL   string
+	org         string
 	debug       bool
+	dryRun      bool
 )
 
 func main() {
@@ -69,11 +71,14 @@ func main() {
 	p.FlagSet.StringVar(&gitlabUser, "gitlab-user", os.Getenv("GITLAB_USER"), "GitLab Username")
 	p.FlagSet.StringVar(&keyPath, "ssh-key", os.Getenv("SSH_KEY"), "SSH private key path to push Wikis")
 
+	p.FlagSet.StringVar(&org, "org", os.Getenv("GHORG"), "GitHub org to move repositories")
+
 	p.FlagSet.StringVar(&customURL, "url", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
 	p.FlagSet.StringVar(&customURL, "u", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
 
 	p.FlagSet.BoolVar(&debug, "debug", false, "enable debug logging")
 	p.FlagSet.BoolVar(&debug, "d", false, "enable debug logging")
+	p.FlagSet.BoolVar(&dryRun, "dry-run", false, "do a dry run of the migration")
 
 	p.Before = func(ctx context.Context) error {
 		if debug {
@@ -121,14 +126,27 @@ func runCommand(ctx context.Context, args []string) error {
 	a := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
 	src, err := provider.NewGitlabProvider(a)
 	if err != nil {
-		return err
+		logrus.Fatalf("error initializing GitProvider: %v", err)
+		os.Exit(1)
 	}
-	dest := provider.NewFakeProvider()
+
+	var dest provider.GitProvider
+
+	if dryRun {
+		dest = provider.NewFakeProvider()
+	} else {
+		id := auth.NewAuthID("", githubToken, keyPath, org)
+		dest, err = provider.NewGithubProvider(ctx, id)
+		if err != nil {
+			logrus.Fatalf("error initializing GitProvider: %v", err)
+			os.Exit(1)
+		}
+	}
 	mig := migrator.NewMigrator(src, dest)
 	err = mig.Run()
 	if err != nil {
 		logrus.Fatalf("error moving repos: %v", err)
-		os.Exit(0)
+		os.Exit(1)
 	}
 
 	return nil

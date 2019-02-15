@@ -26,10 +26,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"time"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
+	"github.com/artur-sak13/gitmv/auth"
 
 	"github.com/google/go-github/v21/github"
 	"github.com/sirupsen/logrus"
@@ -99,11 +98,12 @@ func fromGithubRepo(repo *github.Repository) *GitRepository {
 
 // RepositoryExists checks if a given repostory already exists in GitHub
 func (g *GithubProvider) RepositoryExists(name string) bool {
-	_, r, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
+	_, _, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
 	if err == nil {
 		return true
 	}
-	return r != nil && r.StatusCode == 404
+	return false
+	// return r != nil && r.StatusCode == 404
 }
 
 // CreateIssue creates a new GitHub issue
@@ -203,11 +203,6 @@ func fromGithubLabel(label *github.Label) *GitLabel {
 
 // MigrateRepo migrates a repo from an existing provider into GitHub
 func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
-	u, err := url.Parse(repo.CloneURL)
-	if err != nil {
-		return "", fmt.Errorf("could not parse repo name into owner and repo %v", err)
-	}
-
 	// Must create repository before running import
 	repoImport := &github.Import{
 		VCS:         github.String("git"),
@@ -215,11 +210,11 @@ func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string,
 		VCSUsername: &repo.Owner,
 		VCSPassword: &token,
 	}
-	result, _, err := g.Client.Migrations.StartImport(g.Context, g.ID.Owner, u.RequestURI(), repoImport)
+	result, _, err := g.Client.Migrations.StartImport(g.Context, g.ID.Owner, repo.Name, repoImport)
 	if err != nil {
 		return "", err
 	}
-	return *result.Status, nil
+	return result.GetStatus(), nil
 }
 
 // GetImportProgress checks the progress of a previously started GitHub import
@@ -228,7 +223,7 @@ func (g *GithubProvider) GetImportProgress(repoName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return *migration.Status, nil
+	return migration.GetStatus(), nil
 }
 
 type retryAbort struct{ error }
@@ -274,8 +269,8 @@ func (g *GithubProvider) retry(action string, call func() (*github.Response, err
 }
 
 // GetAuthToken returns a string with a user's api authentication token
-func (g *GithubProvider) GetAuthToken() string {
-	return g.ID.Token
+func (g *GithubProvider) GetAuth() *auth.ID {
+	return g.ID
 }
 
 // GetRepositories retrieves a list of GitHub repositories for the organization/owner

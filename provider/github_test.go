@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/artur-sak13/gitmv/pkg/auth"
+	"github.com/artur-sak13/gitmv/auth"
 	"github.com/google/go-github/v21/github"
 )
 
@@ -53,6 +53,7 @@ func TestMigrateRepo(t *testing.T) {
 	prov, mux, _, teardown := setup()
 	defer teardown()
 	repo := &GitRepository{
+		Name:     "r",
 		CloneURL: "r",
 		Owner:    "u",
 	}
