@@ -24,6 +24,6 @@ func (cmd *issuesCommand) Run(ctx context.Context, args []string) error {
 }
 
 // handleIssues will return
-func (cmd *issuesCommand) handleIssues(ctx context.Context, src provider.GitProvider, dest provider.GitProvider) error {
+func (cmd *issuesCommand) handleIssues(ctx context.Context, src, dest provider.GitProvider) error {
 	return nil
 }

@@ -137,7 +137,8 @@ func runCommand(ctx context.Context, cmd func(context.Context, provider.GitProvi
 	}
 
 	if err := cmd(ctx, src, dest); err != nil {
-		return err
+		logrus.Fatalf("error: %v", err)
+		os.Exit(1)
 	}
 
 	return nil

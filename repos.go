@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 
 	"github.com/artur-sak13/gitmv/provider"
 )
@@ -25,8 +24,11 @@ func (cmd *reposCommand) Run(ctx context.Context, args []string) error {
 }
 
 // handleRepo will return
-func (cmd *reposCommand) handleRepos(ctx context.Context, src provider.GitProvider, dest provider.GitProvider) error {
-	fmt.Println("Here!")
+func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.GitProvider) error {
+	err := dest.(*provider.GithubProvider).LoadCache()
+	if err != nil {
+		return err
+	}
 	dest.(*provider.GithubProvider).PrintCache()
 	return nil
 	// repos, err := src.GetRepositories()

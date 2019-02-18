@@ -24,6 +24,6 @@ func (cmd *wikisCommand) Run(ctx context.Context, args []string) error {
 }
 
 // handleWikis will return
-func (cmd *wikisCommand) handleWikis(ctx context.Context, src provider.GitProvider, dest provider.GitProvider) error {
+func (cmd *wikisCommand) handleWikis(ctx context.Context, src, dest provider.GitProvider) error {
 	return nil
 }

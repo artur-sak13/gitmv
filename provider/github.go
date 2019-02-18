@@ -25,7 +25,7 @@ package provider
 import (
 	"context"
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/artur-sak13/gitmv/auth"
 
@@ -37,13 +37,13 @@ import (
 
 type cachedIssue struct {
 	issue    *GitIssue
-	comments *sync.Map
+	comments map[time.Time]*GitIssueComment
 }
 
 type cachedRepo struct {
 	repo   *GitRepository
-	issues *sync.Map
-	labels *sync.Map
+	issues map[int]*cachedIssue
+	labels map[string]*GitLabel
 }
 
 // TODO: Sync changes between runs
@@ -54,7 +54,7 @@ type GithubProvider struct {
 	ID      *auth.ID
 
 	retries   int
-	repocache *sync.Map
+	repocache map[int]*cachedRepo
 }
 
 // NewGithubProvider creates a new GitHub clients which implements the provider interface
@@ -64,11 +64,7 @@ func NewGithubProvider(ctx context.Context, id *auth.ID) (GitProvider, error) {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
-	gh := WithGithubClient(ctx, client, id)
-	if err := gh.(*GithubProvider).loadCache(); err != nil {
-		return nil, err
-	}
-	return gh, nil
+	return WithGithubClient(ctx, client, id), nil
 }
 
 // WithGithubClient creates a new GitProvider with a GitHub client
@@ -78,7 +74,7 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 		Context:   ctx,
 		ID:        id,
 		retries:   5,
-		repocache: &sync.Map{},
+		repocache: make(map[int]*cachedRepo),
 	}
 }
 
@@ -404,28 +400,29 @@ func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	return labels, nil
 }
 
-func (g *GithubProvider) loadCache() error {
+func (g *GithubProvider) LoadCache() error {
 	repos, err := g.GetRepositories()
 	if err != nil {
 		return err
 	}
 
 	for _, repo := range repos {
-		cachedrepo := &cachedRepo{repo: repo, issues: &sync.Map{}, labels: &sync.Map{}}
+		fmt.Printf("Repo: %s", repo.Name)
+		cachedrepo := &cachedRepo{repo: repo, issues: make(map[int]*cachedIssue), labels: make(map[string]*GitLabel)}
 		issues, err := g.GetIssues(repo.PID, repo.Name)
 		if err != nil {
 			return err
 		}
 		for _, issue := range issues {
-			cacheissue := &cachedIssue{issue: issue, comments: &sync.Map{}}
+			cacheissue := &cachedIssue{issue: issue, comments: make(map[time.Time]*GitIssueComment)}
 			comments, err := g.GetComments(repo.PID, issue.Number, repo.Name)
 			if err != nil {
 				return err
 			}
 			for _, comment := range comments {
-				cacheissue.comments.Store(comment.CreatedAt, comment)
+				cacheissue.comments[comment.CreatedAt] = comment
 			}
-			cachedrepo.issues.Store(issue.Number, cacheissue)
+			cachedrepo.issues[issue.Number] = cacheissue
 		}
 
 		labels, err := g.GetLabels(repo.PID, repo.Name)
@@ -434,42 +431,42 @@ func (g *GithubProvider) loadCache() error {
 		}
 
 		for _, label := range labels {
-			cachedrepo.labels.Store(label.Name, label)
+			cachedrepo.labels[label.Name] = label
 		}
 
-		g.repocache.Store(repo.PID, cachedrepo)
+		g.repocache[repo.PID] = cachedrepo
 	}
 	return nil
 }
 
 // TODO: Swap out with regular maps protected by RWMutexes
 func (g *GithubProvider) PrintCache() {
-	g.repocache.Range(func(k, v interface{}) bool {
-		fmt.Printf("Repo: %s, URL: %s", k.(string))
+	for k, v := range g.repocache {
+		logrus.WithFields(logrus.Fields{
+			"repo": k,
+			"url":  v.repo.CloneURL,
+		})
 
-		v.(*cachedRepo).issues.Range(func(k, v interface{}) bool {
+		for key, val := range v.issues {
 			logrus.WithFields(logrus.Fields{
-				"IID":   k.(string),
-				"issue": v.(*cachedIssue).issue.Title,
+				"IID":   key,
+				"issue": val.issue.Title,
 			})
-			v.(*cachedIssue).comments.Range(func(k, v interface{}) bool {
+
+			for _, j := range val.comments {
 				logrus.WithFields(logrus.Fields{
-					"comment": v.(*GitIssueComment).Body,
+					"comment": j.Body,
 				})
-				return true
-			})
-			return true
-		})
+			}
+		}
 
-		v.(*cachedRepo).labels.Range(func(k, v interface{}) bool {
+		for key, val := range v.labels {
 			logrus.WithFields(logrus.Fields{
-				"label": k.(string),
-				"color": v.(*GitLabel).Color,
+				"label": key,
+				"color": val.Color,
 			})
-			return true
-		})
-		return true
-	})
+		}
+	}
 }
 
 func (g *GithubProvider) depaginate(closure func(opts github.ListOptions) (*github.Response, error)) (*github.Response, error) {
