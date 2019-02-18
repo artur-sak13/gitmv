@@ -20,7 +20,7 @@ For installation instructions from binaries please visit the [Releases Page](htt
 #### Via Go
 
 ```console
-go get github.com/projects/gitmv
+go get github.com/artur-sak13/gitmv
 ```
 
 ## Usage

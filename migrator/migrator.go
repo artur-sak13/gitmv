@@ -78,9 +78,12 @@ func (m *Migrator) Run() error {
 			"url":  destRepo.CloneURL,
 		}).Infof("creating new repo")
 
-		status, err := m.Dest.MigrateRepo(repo, m.Src.GetAuth().Token)
+		status, err := m.Dest.GetImportProgress(repo.Name)
 		if err != nil {
-			return fmt.Errorf("error failed to migrate repository: %v", err)
+			status, err = m.Dest.MigrateRepo(repo, m.Src.GetAuth().Token)
+			if err != nil {
+				return fmt.Errorf("error failed to migrate repository: %v", err)
+			}
 		}
 
 		logrus.WithFields(logrus.Fields{

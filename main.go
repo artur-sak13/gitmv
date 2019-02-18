@@ -54,7 +54,7 @@ var (
 	customURL   string
 	org         string
 	debug       bool
-	dryRun      bool
+	dryrun      bool
 )
 
 func main() {
@@ -65,12 +65,18 @@ func main() {
 	p.GitCommit = version.GITCOMMIT
 	p.Version = version.VERSION
 
+	p.Commands = []cli.Command{
+		&reposCommand{},
+		&issuesCommand{},
+		&wikisCommand{},
+	}
+
 	p.FlagSet = flag.NewFlagSet("global", flag.ExitOnError)
 	p.FlagSet.StringVar(&githubToken, "github-token", os.Getenv("GITHUB_TOKEN"), "GitHub API token (or env var GITHUB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabToken, "gitlab-token", os.Getenv("GITLAB_TOKEN"), "GitLab API token (or env var GITLAB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabUser, "gitlab-user", os.Getenv("GITLAB_USER"), "GitLab Username")
-	p.FlagSet.StringVar(&keyPath, "ssh-key", os.Getenv("SSH_KEY"), "SSH private key path to push Wikis")
 
+	p.FlagSet.StringVar(&keyPath, "ssh-key", os.Getenv("SSH_KEY"), "SSH private key path to push Wikis")
 	p.FlagSet.StringVar(&org, "org", os.Getenv("GHORG"), "GitHub org to move repositories")
 
 	p.FlagSet.StringVar(&customURL, "url", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
@@ -78,7 +84,8 @@ func main() {
 
 	p.FlagSet.BoolVar(&debug, "debug", false, "enable debug logging")
 	p.FlagSet.BoolVar(&debug, "d", false, "enable debug logging")
-	p.FlagSet.BoolVar(&dryRun, "dry-run", false, "do a dry run of the migration")
+
+	p.FlagSet.BoolVar(&dryrun, "dry-run", false, "do not run migration just print the changes that would occur")
 
 	p.Before = func(ctx context.Context) error {
 		if debug {
@@ -96,12 +103,47 @@ func main() {
 		return nil
 	}
 
-	p.Action = runCommand
-
 	p.Run()
 }
 
-func runCommand(ctx context.Context, args []string) error {
+func runCommand(ctx context.Context, cmd func(context.Context, provider.GitProvider, provider.GitProvider) error) error {
+	// On ^C, or SIGTERM handle exit.
+	signals := make(chan os.Signal, 0)
+	signal.Notify(signals, os.Interrupt)
+	signal.Notify(signals, syscall.SIGTERM)
+
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+
+	go func() {
+		for sig := range signals {
+			cancel()
+			logrus.Infof("Received %s, exiting.", sig.String())
+			os.Exit(0)
+		}
+	}()
+
+	glAuth := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
+	ghAuth := auth.NewAuthID("", githubToken, keyPath, org)
+
+	src, err := provider.NewGitlabProvider(glAuth)
+	if err != nil {
+		return err
+	}
+
+	dest, err := provider.NewGithubProvider(ctx, ghAuth)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd(ctx, src, dest); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func runMigration(ctx context.Context, args []string) error {
 	// On ^C, or SIGTERM handle exit.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
@@ -132,7 +174,7 @@ func runCommand(ctx context.Context, args []string) error {
 
 	var dest provider.GitProvider
 
-	if dryRun {
+	if dryrun {
 		dest = provider.NewFakeProvider()
 	} else {
 		id := auth.NewAuthID("", githubToken, keyPath, org)

@@ -25,21 +25,36 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/artur-sak13/gitmv/auth"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/google/go-github/v21/github"
 	"golang.org/x/oauth2"
 )
 
-// TODO: Make sure to retry on failure and attempt to "sync" updates between runs
+type cachedIssue struct {
+	issue    *GitIssue
+	comments *sync.Map
+}
+
+type cachedRepo struct {
+	repo   *GitRepository
+	issues *sync.Map
+	labels *sync.Map
+}
+
+// TODO: Sync changes between runs
 // GitHubProvider implements the provider interface for GitHub
 type GithubProvider struct {
 	Client  *github.Client
 	Context context.Context
 	ID      *auth.ID
 
-	retries int
+	retries   int
+	repocache *sync.Map
 }
 
 // NewGithubProvider creates a new GitHub clients which implements the provider interface
@@ -49,16 +64,21 @@ func NewGithubProvider(ctx context.Context, id *auth.ID) (GitProvider, error) {
 	)
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
-	return WithGithubClient(ctx, client, id), nil
+	gh := WithGithubClient(ctx, client, id)
+	if err := gh.(*GithubProvider).loadCache(); err != nil {
+		return nil, err
+	}
+	return gh, nil
 }
 
 // WithGithubClient creates a new GitProvider with a GitHub client
 func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) GitProvider {
 	return &GithubProvider{
-		Client:  client,
-		Context: ctx,
-		ID:      id,
-		retries: 5,
+		Client:    client,
+		Context:   ctx,
+		ID:        id,
+		retries:   5,
+		repocache: &sync.Map{},
 	}
 }
 
@@ -197,10 +217,6 @@ func fromGithubLabel(label *github.Label) *GitLabel {
 
 // MigrateRepo migrates a repo from an existing provider into GitHub
 func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string, error) {
-	status, err := g.GetImportProgress(repo.Name)
-	if err == nil {
-		return status, nil
-	}
 	// Must create repository before running import
 	repoImport := &github.Import{
 		VCS:         github.String("git"),
@@ -273,24 +289,205 @@ func (g *GithubProvider) GetAuth() *auth.ID {
 
 // GetRepositories retrieves a list of GitHub repositories for the organization/owner
 func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
-	// TODO: Implement
-	return nil, fmt.Errorf("github GetRepositories not implemented")
+	repoOpts := github.RepositoryListOptions{}
+	var result []*github.Repository
+
+	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		repoOpts.ListOptions = opts
+
+		repos, resp, err := g.Client.Repositories.List(g.Context, g.ID.Owner, &repoOpts)
+
+		result = append(result, repos...)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var repos []*GitRepository
+	for _, repo := range result {
+		repos = append(repos, fromGithubRepo(repo))
+	}
+	return repos, nil
 }
 
 // GetIssues retrieves a list of issues associated with a GitHub repository
 func (g *GithubProvider) GetIssues(pid int, repo string) ([]*GitIssue, error) {
-	// TODO: Implement
-	return nil, fmt.Errorf("github GetIssues not implemented")
+	issueOpts := github.IssueListByRepoOptions{
+		State: "all",
+	}
+
+	var result []*github.Issue
+	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		issueOpts.ListOptions = opts
+
+		issues, resp, err := g.Client.Issues.ListByRepo(g.Context, g.ID.Owner, repo, &issueOpts)
+
+		result = append(result, issues...)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*GitIssue
+
+	for _, issue := range result {
+		issues = append(issues, fromGithubIssue(issue.GetNumber(), issue))
+	}
+
+	return issues, nil
+
 }
 
 // GetComments retrieves a list of issue comments associated with a GitHub issue
 func (g *GithubProvider) GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error) {
-	// TODO: Implement
-	return nil, fmt.Errorf("github GetComments not implemented")
+	var list []*github.IssueComment
+	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		comments, resp, err := g.Client.Issues.ListComments(
+			g.Context,
+			g.ID.Owner,
+			repo,
+			issueNum,
+			&github.IssueListCommentsOptions{
+				ListOptions: opts,
+			})
+		list = append(list, comments...)
+
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	var comments []*GitIssueComment
+	for _, comment := range list {
+		comments = append(comments, fromGithubComment(repo, issueNum, comment))
+	}
+
+	return comments, nil
+}
+
+func fromGithubComment(repo string, issueNum int, comment *github.IssueComment) *GitIssueComment {
+	return &GitIssueComment{
+		Repo:      repo,
+		IssueNum:  issueNum,
+		User:      *fromGithubUser(comment.User),
+		Body:      comment.GetBody(),
+		CreatedAt: comment.GetCreatedAt(),
+		UpdatedAt: comment.GetUpdatedAt(),
+	}
 }
 
 // GetLabels retrieves a list of labels associated with a GitHub repository
 func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
-	// TODO: Implement
-	return nil, fmt.Errorf("github GetLabels not implemented")
+	var list []*github.Label
+
+	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		labels, resp, err := g.Client.Issues.ListLabels(g.Context, g.ID.Owner, repo, &opts)
+
+		list = append(list, labels...)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var labels []*GitLabel
+	for _, label := range list {
+		labels = append(labels, fromGithubLabel(label))
+	}
+
+	return labels, nil
+}
+
+func (g *GithubProvider) loadCache() error {
+	repos, err := g.GetRepositories()
+	if err != nil {
+		return err
+	}
+
+	for _, repo := range repos {
+		cachedrepo := &cachedRepo{repo: repo, issues: &sync.Map{}, labels: &sync.Map{}}
+		issues, err := g.GetIssues(repo.PID, repo.Name)
+		if err != nil {
+			return err
+		}
+		for _, issue := range issues {
+			cacheissue := &cachedIssue{issue: issue, comments: &sync.Map{}}
+			comments, err := g.GetComments(repo.PID, issue.Number, repo.Name)
+			if err != nil {
+				return err
+			}
+			for _, comment := range comments {
+				cacheissue.comments.Store(comment.CreatedAt, comment)
+			}
+			cachedrepo.issues.Store(issue.Number, cacheissue)
+		}
+
+		labels, err := g.GetLabels(repo.PID, repo.Name)
+		if err != nil {
+			return err
+		}
+
+		for _, label := range labels {
+			cachedrepo.labels.Store(label.Name, label)
+		}
+
+		g.repocache.Store(repo.PID, cachedrepo)
+	}
+	return nil
+}
+
+// TODO: Swap out with regular maps protected by RWMutexes
+func (g *GithubProvider) PrintCache() {
+	g.repocache.Range(func(k, v interface{}) bool {
+		fmt.Printf("Repo: %s, URL: %s", k.(string))
+
+		v.(*cachedRepo).issues.Range(func(k, v interface{}) bool {
+			logrus.WithFields(logrus.Fields{
+				"IID":   k.(string),
+				"issue": v.(*cachedIssue).issue.Title,
+			})
+			v.(*cachedIssue).comments.Range(func(k, v interface{}) bool {
+				logrus.WithFields(logrus.Fields{
+					"comment": v.(*GitIssueComment).Body,
+				})
+				return true
+			})
+			return true
+		})
+
+		v.(*cachedRepo).labels.Range(func(k, v interface{}) bool {
+			logrus.WithFields(logrus.Fields{
+				"label": k.(string),
+				"color": v.(*GitLabel).Color,
+			})
+			return true
+		})
+		return true
+	})
+}
+
+func (g *GithubProvider) depaginate(closure func(opts github.ListOptions) (*github.Response, error)) (*github.Response, error) {
+	var response *github.Response
+	var err error
+
+	opts := github.ListOptions{
+		Page:    1,
+		PerPage: 100,
+	}
+
+	for {
+		response, err = closure(opts)
+		if err != nil || response.NextPage == 0 {
+			break
+		}
+		opts.Page = response.NextPage
+	}
+
+	return response, err
 }
