@@ -29,8 +29,6 @@ import (
 
 	"github.com/artur-sak13/gitmv/auth"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/google/go-github/v21/github"
 	"golang.org/x/oauth2"
 )
@@ -285,13 +283,13 @@ func (g *GithubProvider) GetAuth() *auth.ID {
 
 // GetRepositories retrieves a list of GitHub repositories for the organization/owner
 func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
-	repoOpts := github.RepositoryListOptions{}
+	repoOpts := github.RepositoryListByOrgOptions{}
 	var result []*github.Repository
 
 	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
 		repoOpts.ListOptions = opts
 
-		repos, resp, err := g.Client.Repositories.List(g.Context, g.ID.Owner, &repoOpts)
+		repos, resp, err := g.Client.Repositories.ListByOrg(g.Context, g.ID.Owner, &repoOpts)
 
 		result = append(result, repos...)
 		return resp, err
@@ -407,7 +405,6 @@ func (g *GithubProvider) LoadCache() error {
 	}
 
 	for _, repo := range repos {
-		fmt.Printf("Repo: %s", repo.Name)
 		cachedrepo := &cachedRepo{repo: repo, issues: make(map[int]*cachedIssue), labels: make(map[string]*GitLabel)}
 		issues, err := g.GetIssues(repo.PID, repo.Name)
 		if err != nil {
@@ -442,29 +439,18 @@ func (g *GithubProvider) LoadCache() error {
 // TODO: Swap out with regular maps protected by RWMutexes
 func (g *GithubProvider) PrintCache() {
 	for k, v := range g.repocache {
-		logrus.WithFields(logrus.Fields{
-			"repo": k,
-			"url":  v.repo.CloneURL,
-		})
+		fmt.Printf("Key: %v, Value: %v\n", k, v.repo.CloneURL)
 
 		for key, val := range v.issues {
-			logrus.WithFields(logrus.Fields{
-				"IID":   key,
-				"issue": val.issue.Title,
-			})
+			fmt.Printf("Key: %v, Value: %v\n", key, val.issue.Body)
 
 			for _, j := range val.comments {
-				logrus.WithFields(logrus.Fields{
-					"comment": j.Body,
-				})
+				fmt.Printf("Key: _, Value: %v\n", j.Body)
 			}
 		}
 
 		for key, val := range v.labels {
-			logrus.WithFields(logrus.Fields{
-				"label": key,
-				"color": val.Color,
-			})
+			fmt.Printf("Key: %v, Value: %v\n", key, val.Name)
 		}
 	}
 }

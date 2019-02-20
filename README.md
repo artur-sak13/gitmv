@@ -15,7 +15,7 @@ A command line tool to migrate repos between GitLab and GitHub
 
 ### Binaries
 
-For installation instructions from binaries please visit the [Releases Page](https://github.com/projects/gitmv/releases).
+For installation instructions from binaries please visit the [Releases Page](https://github.com/artur-sak13/gitmv/releases).
 
 #### Via Go
 
@@ -26,5 +26,25 @@ go get github.com/artur-sak13/gitmv
 ## Usage
 
 ```console
-gitmv
+gitmv -  A command line tool to migrate repos between GitLab and GitHub.
+
+Usage: gitmv <command>
+
+Flags:
+
+  -d, --debug     enable debug logging (default: false)
+  --dry-run       do not run migration just print the changes that would occur (default: false)
+  --github-token  GitHub API token (or env var GITHUB_TOKEN) (default: none)
+  --gitlab-token  GitLab API token (or env var GITLAB_TOKEN) (default: none)
+  --gitlab-user   GitLab Username (default: none)
+  --org           GitHub org to move repositories (default: none)
+  --ssh-key       SSH private key path to push Wikis (default: none)
+  -u, --url       Custom GitLab URL (default: none)
+
+Commands:
+
+  repos    Migrate all repos from one Git provider to another.
+  issues   Migrate all issues from one Git provider to another.
+  wikis    Migrate all wikis from one Git provider to another.
+  version  Show the version information.
 ```

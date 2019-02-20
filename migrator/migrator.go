@@ -154,6 +154,9 @@ func (m *Migrator) processIssues(repo *provider.GitRepository) {
 		m.Errors <- fmt.Errorf("failed to retrieve issues: %v", err)
 		return
 	}
+	if issues == nil || len(issues) == 0 {
+		return
+	}
 	var wg sync.WaitGroup
 	wg.Add(len(issues))
 
@@ -187,6 +190,10 @@ func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup)
 		wg.Done()
 		return
 	}
+	if comments == nil || len(comments) == 0 {
+		wg.Done()
+		return
+	}
 	go func() {
 		for _, comment := range comments {
 
@@ -212,6 +219,9 @@ func (m *Migrator) processLabels(repo *provider.GitRepository) {
 	if err != nil {
 		logrus.Errorf("error getting labels: %v", err)
 		m.Errors <- fmt.Errorf("failed to retrieve labels: %v", err)
+		return
+	}
+	if labels == nil || len(labels) == 0 {
 		return
 	}
 	wg := &sync.WaitGroup{}

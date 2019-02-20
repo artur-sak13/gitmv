@@ -60,7 +60,7 @@ var (
 func main() {
 	p := cli.NewProgram()
 	p.Name = "gitmv"
-	p.Description = "A command line tool to migrate repos between GitLab and Github"
+	p.Description = "A command line tool to migrate repos between GitLab and GitHub"
 
 	p.GitCommit = version.GITCOMMIT
 	p.Version = version.VERSION
