@@ -47,6 +47,7 @@ type Project struct {
 	SSHURLToRepo                              string            `json:"ssh_url_to_repo"`
 	HTTPURLToRepo                             string            `json:"http_url_to_repo"`
 	WebURL                                    string            `json:"web_url"`
+	ReadmeURL                                 string            `json:"readme_url"`
 	TagList                                   []string          `json:"tag_list"`
 	Owner                                     *User             `json:"owner"`
 	Name                                      string            `json:"name"`
@@ -81,14 +82,20 @@ type Project struct {
 	RequestAccessEnabled                      bool              `json:"request_access_enabled"`
 	MergeMethod                               MergeMethodValue  `json:"merge_method"`
 	ForkedFromProject                         *ForkParent       `json:"forked_from_project"`
+	Mirror                                    bool              `json:"mirror"`
+	MirrorUserID                              int               `json:"mirror_user_id"`
+	MirrorTriggerBuilds                       bool              `json:"mirror_trigger_builds"`
+	OnlyMirrorProtectedBranches               bool              `json:"only_mirror_protected_branches"`
+	MirrorOverwritesDivergedBranches          bool              `json:"mirror_overwrites_diverged_branches"`
 	SharedWithGroups                          []struct {
 		GroupID          int    `json:"group_id"`
 		GroupName        string `json:"group_name"`
 		GroupAccessLevel int    `json:"group_access_level"`
 	} `json:"shared_with_groups"`
-	Statistics   *ProjectStatistics `json:"statistics"`
-	Links        *Links             `json:"_links,omitempty"`
-	CIConfigPath *string            `json:"ci_config_path"`
+	Statistics       *ProjectStatistics `json:"statistics"`
+	Links            *Links             `json:"_links,omitempty"`
+	CIConfigPath     *string            `json:"ci_config_path"`
+	CustomAttributes []*CustomAttribute `json:"custom_attributes"`
 }
 
 // Repository represents a repository.
@@ -195,6 +202,7 @@ type ListProjectsOptions struct {
 	WithIssuesEnabled        *bool             `url:"with_issues_enabled,omitempty" json:"with_issues_enabled,omitempty"`
 	WithMergeRequestsEnabled *bool             `url:"with_merge_requests_enabled,omitempty" json:"with_merge_requests_enabled,omitempty"`
 	MinAccessLevel           *AccessLevelValue `url:"min_access_level,omitempty" json:"min_access_level,omitempty"`
+	WithCustomAttributes     *bool             `url:"with_custom_attributes,omitempty" json:"with_custom_attributes,omitempty"`
 }
 
 // ListProjects gets a list of projects accessible by the authenticated user.
@@ -312,19 +320,28 @@ func (s *ProjectsService) GetProjectLanguages(pid interface{}, options ...Option
 	return p, resp, err
 }
 
+// GetProjectOptions represents the available GetProject() options.
+//
+// GitLab API docs: https://docs.gitlab.com/ee/api/projects.html#get-single-project
+type GetProjectOptions struct {
+	Statistics           *bool `url:"statistics,omitempty" json:"statistics,omitempty"`
+	License              *bool `url:"license,omitempty" json:"license,omitempty"`
+	WithCustomAttributes *bool `url:"with_custom_attributes,omitempty" json:"with_custom_attributes,omitempty"`
+}
+
 // GetProject gets a specific project, identified by project ID or
 // NAMESPACE/PROJECT_NAME, which is owned by the authenticated user.
 //
 // GitLab API docs:
 // https://docs.gitlab.com/ce/api/projects.html#get-single-project
-func (s *ProjectsService) GetProject(pid interface{}, options ...OptionFunc) (*Project, *Response, error) {
+func (s *ProjectsService) GetProject(pid interface{}, opt *GetProjectOptions, options ...OptionFunc) (*Project, *Response, error) {
 	project, err := parseID(pid)
 	if err != nil {
 		return nil, nil, err
 	}
 	u := fmt.Sprintf("projects/%s", url.QueryEscape(project))
 
-	req, err := s.client.NewRequest("GET", u, nil, options)
+	req, err := s.client.NewRequest("GET", u, opt, options)
 	if err != nil {
 		return nil, nil, err
 	}

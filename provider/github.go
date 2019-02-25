@@ -117,11 +117,13 @@ func (g *GithubProvider) RepositoryExists(name string) bool {
 // CreateIssue creates a new GitHub issue
 func (g *GithubProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	issueRequest := &github.IssueRequest{
-		Title:     &issue.Title,
-		Body:      &issue.Body,
-		State:     &issue.State,
-		Labels:    ToGitLabelStringSlice(issue.Labels),
-		Assignees: UsersToString(issue.Assignees),
+		Title:  &issue.Title,
+		Body:   &issue.Body,
+		State:  &issue.State,
+		Labels: ToGitLabelStringSlice(issue.Labels),
+	}
+	if issue.Assignees != nil {
+		issueRequest.Assignees = UsersToString(issue.Assignees)
 	}
 
 	result, _, err := g.Client.Issues.Create(g.Context, g.ID.Owner, issue.Repo, issueRequest)
