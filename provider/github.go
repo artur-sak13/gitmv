@@ -25,6 +25,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/artur-sak13/gitmv/auth"
@@ -34,14 +35,20 @@ import (
 )
 
 type cachedIssue struct {
-	issue    *GitIssue
-	comments map[time.Time]*GitIssueComment
+	issue *GitIssue
+
+	commentMu sync.RWMutex
+	comments  map[time.Time]*GitIssueComment
 }
 
 type cachedRepo struct {
-	repo   *GitRepository
-	issues map[int]*cachedIssue
-	labels map[string]*GitLabel
+	repo *GitRepository
+
+	issueMu sync.RWMutex
+	issues  map[int]*cachedIssue
+
+	labelMu sync.RWMutex
+	labels  map[string]*GitLabel
 }
 
 // TODO: Sync changes between runs
@@ -407,33 +414,50 @@ func (g *GithubProvider) LoadCache() error {
 	}
 
 	for _, repo := range repos {
-		cachedrepo := &cachedRepo{repo: repo, issues: make(map[int]*cachedIssue), labels: make(map[string]*GitLabel)}
-		issues, err := g.GetIssues(repo.PID, repo.Name)
-		if err != nil {
-			return err
-		}
-		for _, issue := range issues {
-			cacheissue := &cachedIssue{issue: issue, comments: make(map[time.Time]*GitIssueComment)}
-			comments, err := g.GetComments(repo.PID, issue.Number, repo.Name)
-			if err != nil {
-				return err
-			}
-			for _, comment := range comments {
-				cacheissue.comments[comment.CreatedAt] = comment
-			}
-			cachedrepo.issues[issue.Number] = cacheissue
-		}
-
-		labels, err := g.GetLabels(repo.PID, repo.Name)
-		if err != nil {
-			return err
-		}
-
-		for _, label := range labels {
-			cachedrepo.labels[label.Name] = label
+		cachedrepo := &cachedRepo{
+			repo:    repo,
+			issueMu: sync.RWMutex{},
+			issues:  make(map[int]*cachedIssue),
+			labelMu: sync.RWMutex{},
+			labels:  make(map[string]*GitLabel),
 		}
 
 		g.repocache[repo.PID] = cachedrepo
+	}
+	return nil
+}
+
+func (g *GithubProvider) fillIssues(repo *GitRepository, cachedrepo *cachedRepo) error {
+	issues, err := g.GetIssues(repo.PID, repo.Name)
+	if err != nil {
+		return err
+	}
+	for _, issue := range issues {
+		cacheissue := &cachedIssue{issue: issue, comments: make(map[time.Time]*GitIssueComment)}
+		comments, err := g.GetComments(repo.PID, issue.Number, repo.Name)
+		if err != nil {
+			return err
+		}
+		for _, comment := range comments {
+			go func(comment *GitIssueComment) {
+				cacheissue.commentMu.Lock()
+				cacheissue.comments[comment.CreatedAt] = comment
+				cacheissue.commentMu.Unlock()
+			}(comment)
+		}
+		cachedrepo.issues[issue.Number] = cacheissue
+	}
+	return nil
+}
+
+func (g *GithubProvider) fillLabels(repo *GitRepository, cachedrepo *cachedRepo) error {
+	labels, err := g.GetLabels(repo.PID, repo.Name)
+	if err != nil {
+		return err
+	}
+
+	for _, label := range labels {
+		cachedrepo.labels[label.Name] = label
 	}
 	return nil
 }
