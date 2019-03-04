@@ -27,28 +27,28 @@ import "github.com/artur-sak13/gitmv/auth"
 // GitProvider
 type GitProvider interface {
 	// Create methods
-	CreateRepository(repo *GitRepository) (*GitRepository, error)
+	CreateRepository(*GitRepository) (*GitRepository, error)
 
-	CreateIssue(issue *GitIssue) (*GitIssue, error)
+	CreateIssue(*GitIssue) (*GitIssue, error)
 
-	CreateIssueComment(comment *GitIssueComment) error
+	CreateIssueComment(*GitIssueComment) error
 
-	CreateLabel(label *GitLabel) (*GitLabel, error)
+	CreateLabel(*GitLabel) (*GitLabel, error)
 
-	MigrateRepo(repo *GitRepository, token string) (string, error)
+	MigrateRepo(*GitRepository, string) (string, error)
 
 	// Read methods
 	GetRepositories() ([]*GitRepository, error)
 
-	GetIssues(pid int, repo string) ([]*GitIssue, error)
+	GetIssues(int, string) ([]*GitIssue, error)
 
-	GetComments(pid, issueNum int, repo string) ([]*GitIssueComment, error)
+	GetComments(int, int, string) ([]*GitIssueComment, error)
 
-	GetLabels(pid int, repo string) ([]*GitLabel, error)
+	GetLabels(int, string) ([]*GitLabel, error)
 
 	GetAuth() *auth.ID
 
-	GetImportProgress(repo string) (string, error)
+	GetImportProgress(string) (string, error)
 
 	// ValidateRepositoryName(org string, name string) error
 }

@@ -34,21 +34,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type cachedIssue struct {
-	issue *GitIssue
+type CachedIssue struct {
+	Issue *GitIssue
 
 	commentMu sync.RWMutex
-	comments  map[time.Time]*GitIssueComment
+	Comments  map[time.Time]*GitIssueComment
 }
 
-type cachedRepo struct {
-	repo *GitRepository
+type CachedRepo struct {
+	Repo *GitRepository
 
 	issueMu sync.RWMutex
-	issues  map[int]*cachedIssue
+	Issues  map[int]*CachedIssue
 
 	labelMu sync.RWMutex
-	labels  map[string]*GitLabel
+	Labels  map[string]*GitLabel
 }
 
 // TODO: Sync changes between runs
@@ -59,7 +59,7 @@ type GithubProvider struct {
 	ID      *auth.ID
 
 	retries   int
-	repocache map[int]*cachedRepo
+	Repocache map[string]*CachedRepo
 }
 
 // NewGithubProvider creates a new GitHub clients which implements the provider interface
@@ -79,7 +79,7 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 		Context:   ctx,
 		ID:        id,
 		retries:   5,
-		repocache: make(map[int]*cachedRepo),
+		Repocache: make(map[string]*CachedRepo),
 	}
 }
 
@@ -285,7 +285,7 @@ func (g *GithubProvider) GetImportProgress(repoName string) (string, error) {
 // 	return resp, err
 // }
 
-// GetAuthToken returns a string with a user's api authentication token
+// GetAuth returns a string with a user's api authentication token
 func (g *GithubProvider) GetAuth() *auth.ID {
 	return g.ID
 }
@@ -299,6 +299,19 @@ func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
 		repoOpts.ListOptions = opts
 
 		repos, resp, err := g.Client.Repositories.ListByOrg(g.Context, g.ID.Owner, &repoOpts)
+
+		result = append(result, repos...)
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	repoListOpts := github.RepositoryListOptions{}
+	_, err = g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		repoListOpts.ListOptions = opts
+		repos, resp, err := g.Client.Repositories.List(g.Context, "", &repoListOpts)
 
 		result = append(result, repos...)
 		return resp, err
@@ -413,70 +426,99 @@ func (g *GithubProvider) LoadCache() error {
 		return err
 	}
 
+	wg := sync.WaitGroup{}
 	for _, repo := range repos {
-		cachedrepo := &cachedRepo{
-			repo:    repo,
+		cachedrepo := &CachedRepo{
+			Repo:    repo,
 			issueMu: sync.RWMutex{},
-			issues:  make(map[int]*cachedIssue),
+			Issues:  make(map[int]*CachedIssue),
 			labelMu: sync.RWMutex{},
-			labels:  make(map[string]*GitLabel),
+			Labels:  make(map[string]*GitLabel),
 		}
 
-		g.repocache[repo.PID] = cachedrepo
+		wg.Add(1)
+
+		go func(cachedrepo *CachedRepo) {
+			defer wg.Done()
+			g.fillIssues(cachedrepo)
+			g.fillLabels(cachedrepo)
+		}(cachedrepo)
+
+		g.Repocache[repo.Name] = cachedrepo
 	}
+	wg.Wait()
 	return nil
 }
 
-func (g *GithubProvider) fillIssues(repo *GitRepository, cachedrepo *cachedRepo) error {
-	issues, err := g.GetIssues(repo.PID, repo.Name)
+func (g *GithubProvider) fillIssues(cachedrepo *CachedRepo) error {
+	issues, err := g.GetIssues(cachedrepo.Repo.PID, cachedrepo.Repo.Name)
 	if err != nil {
 		return err
 	}
+
 	for _, issue := range issues {
-		cacheissue := &cachedIssue{issue: issue, comments: make(map[time.Time]*GitIssueComment)}
-		comments, err := g.GetComments(repo.PID, issue.Number, repo.Name)
+		cacheissue := &CachedIssue{Issue: issue, Comments: make(map[time.Time]*GitIssueComment)}
+		comments, err := g.GetComments(cachedrepo.Repo.PID, issue.Number, cachedrepo.Repo.Name)
 		if err != nil {
 			return err
 		}
+
+		wg := sync.WaitGroup{}
+
 		for _, comment := range comments {
+			wg.Add(1)
 			go func(comment *GitIssueComment) {
+				defer wg.Done()
+
 				cacheissue.commentMu.Lock()
-				cacheissue.comments[comment.CreatedAt] = comment
+				cacheissue.Comments[comment.CreatedAt] = comment
 				cacheissue.commentMu.Unlock()
 			}(comment)
 		}
-		cachedrepo.issues[issue.Number] = cacheissue
+		wg.Wait()
+		cachedrepo.Issues[issue.Number] = cacheissue
 	}
+
 	return nil
 }
 
-func (g *GithubProvider) fillLabels(repo *GitRepository, cachedrepo *cachedRepo) error {
-	labels, err := g.GetLabels(repo.PID, repo.Name)
+func (g *GithubProvider) fillLabels(cachedrepo *CachedRepo) error {
+	labels, err := g.GetLabels(cachedrepo.Repo.PID, cachedrepo.Repo.Name)
 	if err != nil {
 		return err
 	}
 
+	wg := sync.WaitGroup{}
+
 	for _, label := range labels {
-		cachedrepo.labels[label.Name] = label
+		wg.Add(1)
+		go func(label *GitLabel) {
+			defer wg.Done()
+
+			cachedrepo.labelMu.Lock()
+			cachedrepo.Labels[label.Name] = label
+			cachedrepo.labelMu.Unlock()
+		}(label)
 	}
+	wg.Wait()
 	return nil
 }
 
 // TODO: Swap out with regular maps protected by RWMutexes
 func (g *GithubProvider) PrintCache() {
-	for k, v := range g.repocache {
-		fmt.Printf("Key: %v, Value: %v\n", k, v.repo.CloneURL)
+	for k, v := range g.Repocache {
+		fmt.Printf("Print Repo - Key: %v, Value: %v\n", k, v.Repo.CloneURL)
 
-		for key, val := range v.issues {
-			fmt.Printf("Key: %v, Value: %v\n", key, val.issue.Body)
+		for key, val := range v.Issues {
+			fmt.Printf("Print Issue - Key: %v, Value: %v\n", key, val.Issue.Body)
 
-			for _, j := range val.comments {
-				fmt.Printf("Key: _, Value: %v\n", j.Body)
+			for _, j := range val.Comments {
+				fmt.Printf("Print Comment - Key: _, Value: %v\n", j.Body)
 			}
 		}
 
-		for key, val := range v.labels {
-			fmt.Printf("Key: %v, Value: %v\n", key, val.Name)
+		for key, val := range v.Labels {
+			fmt.Printf("Print Label - Key: %v, Value: %v\n", key, val.Name)
 		}
 	}
 }

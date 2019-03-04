@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 
 	"github.com/artur-sak13/gitmv/provider"
 )
@@ -25,42 +26,33 @@ func (cmd *reposCommand) Run(ctx context.Context, args []string) error {
 
 // handleRepo will return
 func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.GitProvider) error {
-	err := dest.(*provider.GithubProvider).LoadCache()
+	repos, err := src.GetRepositories()
 	if err != nil {
 		return err
 	}
-	dest.(*provider.GithubProvider).PrintCache()
-	return nil
-	// repos, err := src.GetRepositories()
+	github := dest.(*provider.GithubProvider)
+
+	err = github.LoadCache()
+	if err != nil {
+		return err
+	}
+	count := 0
+	for _, repo := range repos {
+		if repo.Fork || repo.Empty {
+			continue
+		}
+		if _, ok := github.Repocache[repo.Name]; !ok {
+			count++
+			fmt.Printf("Missing repo: %s\n", repo.Name)
+		}
+	}
+	fmt.Printf("Repos missing: %d\n", count)
+	// b, err := json.MarshalIndent(github.Repocache, "", " ")
 	// if err != nil {
-	// 	return fmt.Errorf("error getting repos: %v", err)
+	// 	return err
 	// }
+	// fmt.Printf("Repocache: %s", string(b))
+	// github.PrintCache()
 
-	// for _, repo := range repos {
-	// 	if repo.Fork || repo.Empty {
-	// 		continue
-	// 	}
-
-	// 	destRepo, err := dest.CreateRepository(repo)
-	// 	if err != nil {
-	// 		return fmt.Errorf("error creating repository: %v", err)
-	// 	}
-
-	// 	logrus.WithFields(logrus.Fields{
-	// 		"repo": destRepo.Name,
-	// 		"url":  destRepo.CloneURL,
-	// 	}).Infof("creating new repo")
-
-	// 	status, err := dest.MigrateRepo(repo, src.GetAuth().Token)
-	// 	if err != nil {
-	// 		return fmt.Errorf("error failed to migrate repository: %v", err)
-	// 	}
-
-	// 	logrus.WithFields(logrus.Fields{
-	// 		"repo":   repo.Name,
-	// 		"status": status,
-	// 	}).Infof("importing repo")
-	// }
-
-	// return nil
+	return nil
 }

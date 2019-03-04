@@ -123,6 +123,12 @@ func runCommand(ctx context.Context, cmd func(context.Context, provider.GitProvi
 		}
 	}()
 
+	if err := agent.Listen(agent.Options{
+		ShutdownCleanup: true, // automatically closes on os.Interrupt
+	}); err != nil {
+		logrus.Fatalf("gops agent failed: %v", err)
+	}
+
 	glAuth := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
 	ghAuth := auth.NewAuthID("", githubToken, keyPath, org)
 
