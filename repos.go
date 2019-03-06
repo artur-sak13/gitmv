@@ -41,9 +41,42 @@ func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.Git
 		if repo.Fork || repo.Empty {
 			continue
 		}
-		if _, ok := github.Repocache[repo.Name]; !ok {
+		cachedrepo, ok := github.Repocache[repo.Name]
+		if !ok {
 			count++
 			fmt.Printf("Missing repo: %s\n", repo.Name)
+		}
+		issues, err := src.GetIssues(repo.PID, repo.Name)
+		if err != nil {
+			return err
+		}
+		for _, issue := range issues {
+			cachedissue, ok := cachedrepo.Issues[issue.Number]
+			if !ok {
+				fmt.Printf("Missing issue: %s\n", issue.Title)
+				continue
+			}
+			comments, err := src.GetComments(repo.PID, issue.Number, repo.Name)
+			if err != nil {
+				return err
+			}
+			for _, comment := range comments {
+				_, ok := cachedissue.Comments[comment.CreatedAt]
+				if !ok {
+					fmt.Printf("Missing comment: %s\n", comment.Body)
+				}
+			}
+		}
+		labels, err := src.GetLabels(repo.PID, repo.Name)
+		if err != nil {
+			return err
+		}
+
+		for _, label := range labels {
+			_, ok := cachedrepo.Labels[label.Name]
+			if !ok {
+				fmt.Printf("Missing label: %s\n", label.Name)
+			}
 		}
 	}
 	fmt.Printf("Repos missing: %d\n", count)
