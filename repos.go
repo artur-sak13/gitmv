@@ -45,28 +45,16 @@ func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.Git
 		if !ok {
 			count++
 			fmt.Printf("Missing repo: %s\n", repo.Name)
-		}
-		issues, err := src.GetIssues(repo.PID, repo.Name)
-		if err != nil {
-			return err
-		}
-		for _, issue := range issues {
-			cachedissue, ok := cachedrepo.Issues[issue.Number]
-			if !ok {
-				fmt.Printf("Missing issue: %s\n", issue.Title)
-				continue
-			}
-			comments, err := src.GetComments(repo.PID, issue.Number, repo.Name)
+			_, err := dest.CreateRepository(repo)
 			if err != nil {
-				return err
+				return fmt.Errorf("error creating repository: %v\n%+v", err, repo)
 			}
-			for _, comment := range comments {
-				_, ok := cachedissue.Comments[comment.CreatedAt]
-				if !ok {
-					fmt.Printf("Missing comment: %s\n", comment.Body)
-				}
+			_, err = dest.MigrateRepo(repo, src.GetAuth().Token)
+			if err != nil {
+				return fmt.Errorf("error migrating repository: %v", err)
 			}
 		}
+
 		labels, err := src.GetLabels(repo.PID, repo.Name)
 		if err != nil {
 			return err
@@ -76,6 +64,40 @@ func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.Git
 			_, ok := cachedrepo.Labels[label.Name]
 			if !ok {
 				fmt.Printf("Missing label: %s\n", label.Name)
+				_, err := dest.CreateLabel(label)
+				if err != nil {
+					return fmt.Errorf("error creating label: %v\n%+v", err, label)
+				}
+			}
+		}
+
+		issues, err := src.GetIssues(repo.PID, repo.Name)
+		if err != nil {
+			return err
+		}
+		for _, issue := range issues {
+			cachedissue, ok := cachedrepo.Issues[issue.Title]
+			if !ok {
+				fmt.Printf("Missing issue: %s\n", issue.Title)
+				newIssue, err := dest.CreateIssue(issue)
+				if err != nil {
+					return fmt.Errorf("error creating issue: %v\n%+v", err, issue)
+				}
+				cachedissue = github.NewCachedIssue(newIssue)
+			}
+			comments, err := src.GetComments(repo.PID, issue.Number, repo.Name)
+			if err != nil {
+				return err
+			}
+			for _, comment := range comments {
+				_, ok := cachedissue.Comments[comment.CreatedAt]
+				if !ok {
+					fmt.Printf("Missing comment: %s\n", comment.Body)
+					err := dest.CreateIssueComment(comment)
+					if err != nil {
+						return fmt.Errorf("error creating comment: %v\n%+v", err, comment)
+					}
+				}
 			}
 		}
 	}

@@ -95,8 +95,8 @@ func (m *Migrator) Run() error {
 		go m.waitForImport(repo.Name, &importwg)
 
 		go func(repo *provider.GitRepository) {
-			m.processIssues(repo)
 			m.processLabels(repo)
+			m.processIssues(repo)
 			if err := provider.MigrateWiki(destRepo, m.Dest.GetAuth()); err != nil {
 				m.Errors <- fmt.Errorf("failed to migrate wiki for %s: %v", repo.Name, err)
 			}

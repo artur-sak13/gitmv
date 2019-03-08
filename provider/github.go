@@ -25,6 +25,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,13 +46,12 @@ type CachedRepo struct {
 	Repo *GitRepository
 
 	issueMu sync.RWMutex
-	Issues  map[int]*CachedIssue
+	Issues  map[string]*CachedIssue
 
 	labelMu sync.RWMutex
 	Labels  map[string]*GitLabel
 }
 
-// TODO: Sync changes between runs
 // GitHubProvider implements the provider interface for GitHub
 type GithubProvider struct {
 	Client  *github.Client
@@ -60,6 +60,7 @@ type GithubProvider struct {
 
 	retries   int
 	Repocache map[string]*CachedRepo
+	Members   map[string]*github.User
 }
 
 // NewGithubProvider creates a new GitHub clients which implements the provider interface
@@ -86,9 +87,9 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 // CreateRepository creates a new GitHub repository
 func (g *GithubProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository, error) {
 	repo := &github.Repository{
-		Name:        github.String(srcRepo.Name),
+		Name:        github.String(strings.TrimSpace(srcRepo.Name)),
 		Private:     github.Bool(true),
-		Description: github.String(srcRepo.Description),
+		Description: github.String(strings.TrimSpace(srcRepo.Description)),
 		Archived:    github.Bool(srcRepo.Archived),
 	}
 	if !g.RepositoryExists(srcRepo.Name) {
@@ -124,13 +125,17 @@ func (g *GithubProvider) RepositoryExists(name string) bool {
 // CreateIssue creates a new GitHub issue
 func (g *GithubProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 	issueRequest := &github.IssueRequest{
-		Title:  &issue.Title,
-		Body:   &issue.Body,
-		State:  &issue.State,
+		Title:  github.String(strings.TrimSpace(issue.Title)),
+		Body:   github.String(strings.TrimSpace(issue.Body)),
+		State:  github.String(strings.TrimSpace(issue.State)),
 		Labels: ToGitLabelStringSlice(issue.Labels),
 	}
-	if issue.Assignees != nil {
-		issueRequest.Assignees = UsersToString(issue.Assignees)
+	if issue.Assignees != nil && len(issue.Assignees) > 0 {
+		var assignees []string
+		for _, assignee := range issue.Assignees {
+			assignees = append(assignees, g.Members[assignee.Email].GetLogin())
+		}
+		issueRequest.Assignees = &assignees
 	}
 
 	result, _, err := g.Client.Issues.Create(g.Context, g.ID.Owner, issue.Repo, issueRequest)
@@ -140,22 +145,25 @@ func (g *GithubProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 
 	number := 0
 	if result.Number != nil {
-		number = *result.Number
+		number = result.GetNumber()
 	}
 	return fromGithubIssue(number, result), nil
 }
 
 func fromGithubIssue(number int, issue *github.Issue) *GitIssue {
 	labels := []GitLabel{}
-	for _, label := range issue.Labels {
-		label := label // Pin to scope
-		labels = append(labels, *fromGithubLabel(&label))
+	if issue.Labels != nil && len(issue.Labels) > 0 {
+		for _, label := range issue.Labels {
+			label := label // Pin to scope
+			labels = append(labels, *fromGithubLabel(&label))
+		}
 	}
 
 	assignees := []GitUser{}
-
-	for _, assignee := range issue.Assignees {
-		assignees = append(assignees, *fromGithubUser(assignee))
+	if issue.Assignees != nil && len(issue.Assignees) > 0 {
+		for _, assignee := range issue.Assignees {
+			assignees = append(assignees, *fromGithubUser(assignee))
+		}
 	}
 
 	return &GitIssue{
@@ -164,7 +172,7 @@ func fromGithubIssue(number int, issue *github.Issue) *GitIssue {
 		Title:     issue.GetTitle(),
 		Body:      issue.GetBody(),
 		Labels:    labels,
-		User:      fromGithubUser(issue.User),
+		User:      fromGithubUser(issue.GetUser()),
 		Assignees: assignees,
 	}
 }
@@ -180,11 +188,8 @@ func fromGithubUser(user *github.User) *GitUser {
 // CreateIssueComment creates a new GitHub issue comment
 func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
 	issueComment := &github.IssueComment{
-		User: &github.User{
-
-			Email: &comment.User.Email,
-		},
-		Body:      &comment.Body,
+		User:      g.Members[comment.User.Email],
+		Body:      github.String(strings.TrimSpace(comment.Body)),
 		CreatedAt: &comment.CreatedAt,
 		UpdatedAt: &comment.UpdatedAt,
 	}
@@ -198,9 +203,9 @@ func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
 // CreateLabel creates a new GitHub issue label
 func (g *GithubProvider) CreateLabel(srcLabel *GitLabel) (*GitLabel, error) {
 	label := &github.Label{
-		Name:        &srcLabel.Name,
-		Color:       &srcLabel.Color,
-		Description: &srcLabel.Description,
+		Name:        github.String(strings.TrimSpace(srcLabel.Name)),
+		Color:       github.String(strings.Trim(srcLabel.Color, "#\r\n\t")),
+		Description: github.String(strings.TrimSpace(srcLabel.Description)),
 	}
 
 	result, _, err := g.Client.Issues.CreateLabel(g.Context, g.ID.Owner, srcLabel.Repo, label)
@@ -223,9 +228,9 @@ func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string,
 	// Must create repository before running import
 	repoImport := &github.Import{
 		VCS:         github.String("git"),
-		VCSURL:      &repo.CloneURL,
-		VCSUsername: &repo.Owner,
-		VCSPassword: &token,
+		VCSURL:      github.String(repo.CloneURL),
+		VCSUsername: github.String(repo.Owner),
+		VCSPassword: github.String(token),
 	}
 	result, _, err := g.Client.Migrations.StartImport(g.Context, g.ID.Owner, repo.Name, repoImport)
 	if err != nil {
@@ -420,18 +425,52 @@ func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 	return labels, nil
 }
 
+func (g *GithubProvider) getMembers() ([]*github.User, error) {
+	memberOpts := github.ListMembersOptions{}
+	var users []*github.User
+	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+		memberOpts.ListOptions = opts
+		members, resp, err := g.Client.Organizations.ListMembers(g.Context, g.ID.Owner, &memberOpts)
+
+		users = append(users, members...)
+
+		return resp, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+func (g *GithubProvider) setMemberMap(members []*github.User) {
+	g.Members = make(map[string]*github.User)
+	for _, member := range members {
+		if email := member.GetEmail(); email != "" {
+			g.Members[email] = member
+		}
+	}
+}
+
 func (g *GithubProvider) LoadCache() error {
 	repos, err := g.GetRepositories()
 	if err != nil {
 		return err
 	}
+	members, err := g.getMembers()
+	if err != nil {
+		return err
+	}
+
+	g.setMemberMap(members)
 
 	wg := sync.WaitGroup{}
 	for _, repo := range repos {
 		cachedrepo := &CachedRepo{
 			Repo:    repo,
 			issueMu: sync.RWMutex{},
-			Issues:  make(map[int]*CachedIssue),
+			Issues:  make(map[string]*CachedIssue),
 			labelMu: sync.RWMutex{},
 			Labels:  make(map[string]*GitLabel),
 		}
@@ -476,10 +515,17 @@ func (g *GithubProvider) fillIssues(cachedrepo *CachedRepo) error {
 			}(comment)
 		}
 		wg.Wait()
-		cachedrepo.Issues[issue.Number] = cacheissue
+		cachedrepo.Issues[issue.Title] = cacheissue
 	}
 
 	return nil
+}
+
+func (g *GithubProvider) NewCachedIssue(issue *GitIssue) *CachedIssue {
+	return &CachedIssue{
+		Issue:    issue,
+		Comments: make(map[time.Time]*GitIssueComment),
+	}
 }
 
 func (g *GithubProvider) fillLabels(cachedrepo *CachedRepo) error {

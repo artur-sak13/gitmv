@@ -46,6 +46,7 @@ import (
 // *     [X] Make it work
 // ?     [?] Make it fast
 // TODO: [ ] Make it elegant
+// TODO: Fix incorrect issue numbers between source and dest repos
 var (
 	githubToken string
 	gitlabToken string
