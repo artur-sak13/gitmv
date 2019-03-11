@@ -322,7 +322,7 @@ func (g *GitlabProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 }
 
 // CreateIssueComment creates a new GitLab issue note/comment
-func (g *GitlabProvider) CreateIssueComment(comment *GitIssueComment) error {
+func (g *GitlabProvider) CreateIssueComment(issueNum int, comment *GitIssueComment) error {
 	// TODO: Implement
 	return fmt.Errorf("gitlab CreateIssueComment not implemented")
 }

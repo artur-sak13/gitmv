@@ -72,7 +72,7 @@ func setup(s *GitlabProviderSuite) (*http.ServeMux, *httptest.Server, *provider.
 	c := gitlab.NewClient(nil, "")
 	_ = c.SetBaseURL(server.URL)
 
-	id := auth.NewAuthID(server.URL, "test-token", "/fake/.ssh/id_rsa", gitlabOrgName)
+	id := auth.NewAuthID(server.URL, "test-token", gitlabOrgName)
 
 	// Gitlab provider that we want to test
 	prov := provider.WithGitlabClient(c, id)

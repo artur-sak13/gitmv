@@ -31,7 +31,7 @@ type GitProvider interface {
 
 	CreateIssue(*GitIssue) (*GitIssue, error)
 
-	CreateIssueComment(*GitIssueComment) error
+	CreateIssueComment(int, *GitIssueComment) error
 
 	CreateLabel(*GitLabel) (*GitLabel, error)
 

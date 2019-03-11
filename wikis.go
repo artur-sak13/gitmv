@@ -25,5 +25,17 @@ func (cmd *wikisCommand) Run(ctx context.Context, args []string) error {
 
 // handleWikis will return
 func (cmd *wikisCommand) handleWikis(ctx context.Context, src, dest provider.GitProvider) error {
+	repos, err := src.GetRepositories()
+	if err != nil {
+		return err
+	}
+	for _, repo := range repos {
+		if repo.Fork || repo.Empty {
+			continue
+		}
+		if err := provider.MigrateWiki(repo, dest.GetAuth()); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -44,7 +44,7 @@ func setup() (*GithubProvider, *http.ServeMux, string, func()) {
 	client.BaseURL = u
 	client.UploadURL = u
 
-	id := auth.NewAuthID(server.URL, "p", "~/fake/.ssh/id_rsa", githubOrgName)
+	id := auth.NewAuthID(server.URL, "p", githubOrgName)
 	prov := WithGithubClient(context.Background(), client, id)
 
 	return prov.(*GithubProvider), mux, server.URL, server.Close

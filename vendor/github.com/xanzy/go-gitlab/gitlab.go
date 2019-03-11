@@ -294,6 +294,7 @@ type Client struct {
 	BuildVariables        *BuildVariablesService
 	CIYMLTemplate         *CIYMLTemplatesService
 	Commits               *CommitsService
+	ContainerRegistry     *ContainerRegistryService
 	CustomAttribute       *CustomAttributesService
 	DeployKeys            *DeployKeysService
 	Deployments           *DeploymentsService
@@ -302,6 +303,7 @@ type Client struct {
 	Events                *EventsService
 	Features              *FeaturesService
 	GitIgnoreTemplates    *GitIgnoreTemplatesService
+	GroupBadges           *GroupBadgesService
 	GroupIssueBoards      *GroupIssueBoardsService
 	GroupMembers          *GroupMembersService
 	GroupMilestones       *GroupMilestonesService
@@ -332,6 +334,8 @@ type Client struct {
 	Projects              *ProjectsService
 	ProtectedBranches     *ProtectedBranchesService
 	ProtectedTags         *ProtectedTagsService
+	ReleaseLinks          *ReleaseLinksService
+	Releases              *ReleasesService
 	Repositories          *RepositoriesService
 	RepositoryFiles       *RepositoryFilesService
 	Runners               *RunnersService
@@ -436,6 +440,7 @@ func newClient(httpClient *http.Client) *Client {
 	c.BuildVariables = &BuildVariablesService{client: c}
 	c.CIYMLTemplate = &CIYMLTemplatesService{client: c}
 	c.Commits = &CommitsService{client: c}
+	c.ContainerRegistry = &ContainerRegistryService{client: c}
 	c.CustomAttribute = &CustomAttributesService{client: c}
 	c.DeployKeys = &DeployKeysService{client: c}
 	c.Deployments = &DeploymentsService{client: c}
@@ -444,6 +449,7 @@ func newClient(httpClient *http.Client) *Client {
 	c.Events = &EventsService{client: c}
 	c.Features = &FeaturesService{client: c}
 	c.GitIgnoreTemplates = &GitIgnoreTemplatesService{client: c}
+	c.GroupBadges = &GroupBadgesService{client: c}
 	c.GroupIssueBoards = &GroupIssueBoardsService{client: c}
 	c.GroupMembers = &GroupMembersService{client: c}
 	c.GroupMilestones = &GroupMilestonesService{client: c}
@@ -474,6 +480,8 @@ func newClient(httpClient *http.Client) *Client {
 	c.Projects = &ProjectsService{client: c}
 	c.ProtectedBranches = &ProtectedBranchesService{client: c}
 	c.ProtectedTags = &ProtectedTagsService{client: c}
+	c.ReleaseLinks = &ReleaseLinksService{client: c}
+	c.Releases = &ReleasesService{client: c}
 	c.Repositories = &RepositoriesService{client: c}
 	c.RepositoryFiles = &RepositoryFilesService{client: c}
 	c.Runners = &RunnersService{client: c}

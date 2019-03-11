@@ -35,23 +35,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type CachedIssue struct {
-	Issue *GitIssue
-
-	commentMu sync.RWMutex
-	Comments  map[time.Time]*GitIssueComment
-}
-
-type CachedRepo struct {
-	Repo *GitRepository
-
-	issueMu sync.RWMutex
-	Issues  map[string]*CachedIssue
-
-	labelMu sync.RWMutex
-	Labels  map[string]*GitLabel
-}
-
 // GitHubProvider implements the provider interface for GitHub
 type GithubProvider struct {
 	Client  *github.Client
@@ -86,20 +69,32 @@ func WithGithubClient(ctx context.Context, client *github.Client, id *auth.ID) G
 
 // CreateRepository creates a new GitHub repository
 func (g *GithubProvider) CreateRepository(srcRepo *GitRepository) (*GitRepository, error) {
+	cachedrepo, ok := g.Repocache[srcRepo.Name]
+	if ok {
+		return cachedrepo.Repo, nil
+	}
+
 	repo := &github.Repository{
 		Name:        github.String(strings.TrimSpace(srcRepo.Name)),
 		Private:     github.Bool(true),
 		Description: github.String(strings.TrimSpace(srcRepo.Description)),
 		Archived:    github.Bool(srcRepo.Archived),
 	}
-	if !g.RepositoryExists(srcRepo.Name) {
-		r, _, err := g.Client.Repositories.Create(g.Context, g.ID.Owner, repo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, srcRepo.Name, err)
-		}
-		return fromGithubRepo(r), nil
+
+	r, _, err := g.Client.Repositories.Create(g.Context, g.ID.Owner, repo)
+	if err == nil {
+		newrepo := fromGithubRepo(r)
+		g.NewCachedRepo(newrepo)
+		return newrepo, nil
 	}
-	return fromGithubRepo(repo), nil
+
+	abuseRateLimitError, ok := err.(*github.AbuseRateLimitError)
+	if ok {
+		time.Sleep(abuseRateLimitError.GetRetryAfter())
+		return g.CreateRepository(srcRepo)
+	}
+
+	return nil, fmt.Errorf("failed to create repository %s/%s due to: %s", g.ID.Owner, srcRepo.Name, err)
 }
 
 func fromGithubRepo(repo *github.Repository) *GitRepository {
@@ -119,7 +114,6 @@ func fromGithubRepo(repo *github.Repository) *GitRepository {
 func (g *GithubProvider) RepositoryExists(name string) bool {
 	_, _, err := g.Client.Repositories.Get(g.Context, g.ID.Owner, name)
 	return err == nil
-	// return r != nil && r.StatusCode == 404
 }
 
 // CreateIssue creates a new GitHub issue
@@ -186,18 +180,26 @@ func fromGithubUser(user *github.User) *GitUser {
 }
 
 // CreateIssueComment creates a new GitHub issue comment
-func (g *GithubProvider) CreateIssueComment(comment *GitIssueComment) error {
+func (g *GithubProvider) CreateIssueComment(issueNum int, comment *GitIssueComment) error {
 	issueComment := &github.IssueComment{
 		User:      g.Members[comment.User.Email],
 		Body:      github.String(strings.TrimSpace(comment.Body)),
 		CreatedAt: &comment.CreatedAt,
 		UpdatedAt: &comment.UpdatedAt,
 	}
-	_, _, err := g.Client.Issues.CreateComment(g.Context, g.ID.Owner, comment.Repo, comment.IssueNum, issueComment)
-	if err != nil {
-		return err
+	_, _, err := g.Client.Issues.CreateComment(g.Context, g.ID.Owner, comment.Repo, issueNum, issueComment)
+
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	abuseRateLimitError, ok := err.(*github.AbuseRateLimitError)
+	if ok {
+		time.Sleep(abuseRateLimitError.GetRetryAfter())
+		return g.CreateIssueComment(issueNum, comment)
+	}
+
+	return err
 }
 
 // CreateLabel creates a new GitHub issue label
@@ -209,10 +211,18 @@ func (g *GithubProvider) CreateLabel(srcLabel *GitLabel) (*GitLabel, error) {
 	}
 
 	result, _, err := g.Client.Issues.CreateLabel(g.Context, g.ID.Owner, srcLabel.Repo, label)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return fromGithubLabel(result), nil
 	}
-	return fromGithubLabel(result), nil
+
+	abuseRateLimitError, ok := err.(*github.AbuseRateLimitError)
+	if ok {
+		time.Sleep(abuseRateLimitError.GetRetryAfter())
+		return g.CreateLabel(srcLabel)
+	}
+
+	return nil, err
+
 }
 
 func fromGithubLabel(label *github.Label) *GitLabel {
@@ -233,10 +243,17 @@ func (g *GithubProvider) MigrateRepo(repo *GitRepository, token string) (string,
 		VCSPassword: github.String(token),
 	}
 	result, _, err := g.Client.Migrations.StartImport(g.Context, g.ID.Owner, repo.Name, repoImport)
-	if err != nil {
-		return "", err
+	if err == nil {
+		return result.GetStatus(), nil
 	}
-	return result.GetStatus(), nil
+
+	abuseRateLimitError, ok := err.(*github.AbuseRateLimitError)
+	if ok {
+		time.Sleep(abuseRateLimitError.GetRetryAfter())
+		return g.MigrateRepo(repo, token)
+	}
+
+	return "", err
 }
 
 // GetImportProgress checks the progress of a previously started GitHub import
@@ -313,18 +330,18 @@ func (g *GithubProvider) GetRepositories() ([]*GitRepository, error) {
 		return nil, err
 	}
 
-	repoListOpts := github.RepositoryListOptions{}
-	_, err = g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
-		repoListOpts.ListOptions = opts
-		repos, resp, err := g.Client.Repositories.List(g.Context, "", &repoListOpts)
+	// repoListOpts := github.RepositoryListOptions{}
+	// _, err = g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
+	// 	repoListOpts.ListOptions = opts
+	// 	repos, resp, err := g.Client.Repositories.List(g.Context, "", &repoListOpts)
 
-		result = append(result, repos...)
-		return resp, err
-	})
+	// 	result = append(result, repos...)
+	// 	return resp, err
+	// })
 
-	if err != nil {
-		return nil, err
-	}
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	var repos []*GitRepository
 	for _, repo := range result {
@@ -428,6 +445,7 @@ func (g *GithubProvider) GetLabels(pid int, repo string) ([]*GitLabel, error) {
 func (g *GithubProvider) getMembers() ([]*github.User, error) {
 	memberOpts := github.ListMembersOptions{}
 	var users []*github.User
+
 	_, err := g.depaginate(func(opts github.ListOptions) (*github.Response, error) {
 		memberOpts.ListOptions = opts
 		members, resp, err := g.Client.Organizations.ListMembers(g.Context, g.ID.Owner, &memberOpts)
@@ -487,6 +505,16 @@ func (g *GithubProvider) LoadCache() error {
 	}
 	wg.Wait()
 	return nil
+}
+
+func (g *GithubProvider) NewCachedRepo(repo *GitRepository) {
+	g.Repocache[repo.Name] = &CachedRepo{
+		Repo:    repo,
+		issueMu: sync.RWMutex{},
+		Issues:  make(map[string]*CachedIssue),
+		labelMu: sync.RWMutex{},
+		Labels:  make(map[string]*GitLabel),
+	}
 }
 
 func (g *GithubProvider) fillIssues(cachedrepo *CachedRepo) error {
@@ -550,7 +578,6 @@ func (g *GithubProvider) fillLabels(cachedrepo *CachedRepo) error {
 	return nil
 }
 
-// TODO: Swap out with regular maps protected by RWMutexes
 func (g *GithubProvider) PrintCache() {
 	for k, v := range g.Repocache {
 		fmt.Printf("Print Repo - Key: %v, Value: %v\n", k, v.Repo.CloneURL)

@@ -91,7 +91,7 @@ func (f *FakeProvider) CreateIssue(issue *GitIssue) (*GitIssue, error) {
 }
 
 // CreateIssueComment creates a new fake issue comment
-func (f *FakeProvider) CreateIssueComment(comment *GitIssueComment) error {
+func (f *FakeProvider) CreateIssueComment(issueNum int, comment *GitIssueComment) error {
 	number := comment.IssueNum
 
 	fakeRepo, ok := f.Repositories.Load(comment.Repo)
@@ -124,7 +124,7 @@ func (f *FakeProvider) CreateLabel(label *GitLabel) (*GitLabel, error) {
 
 // GetAuthToken returns a string with a user's api authentication token
 func (f *FakeProvider) GetAuth() *auth.ID {
-	return auth.NewAuthID("git.example.com", "test-token", "/fake/.ssh/id_rsa", "fakeorg")
+	return auth.NewAuthID("git.example.com", "test-token", "fakeorg")
 }
 
 // GetRepositories gets the fake provider's repositories

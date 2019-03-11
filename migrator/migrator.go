@@ -202,7 +202,7 @@ func (m *Migrator) processComments(issue *provider.GitIssue, wg *sync.WaitGroup)
 				"comment": comment.Body,
 			}).Info("creating comment")
 
-			err := m.Dest.CreateIssueComment(comment)
+			err := m.Dest.CreateIssueComment(issue.Number, comment)
 			if err != nil {
 				logrus.Errorf("error creating comments for repo %s: %v", issue.Repo, err)
 				m.Errors <- fmt.Errorf("failed to create comment: %v", err)

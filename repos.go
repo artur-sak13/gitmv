@@ -93,7 +93,7 @@ func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.Git
 				_, ok := cachedissue.Comments[comment.CreatedAt]
 				if !ok {
 					fmt.Printf("Missing comment: %s\n", comment.Body)
-					err := dest.CreateIssueComment(comment)
+					err := dest.CreateIssueComment(cachedissue.Issue.Number, comment)
 					if err != nil {
 						return fmt.Errorf("error creating comment: %v\n%+v", err, comment)
 					}
@@ -102,12 +102,5 @@ func (cmd *reposCommand) handleRepos(ctx context.Context, src, dest provider.Git
 		}
 	}
 	fmt.Printf("Repos missing: %d\n", count)
-	// b, err := json.MarshalIndent(github.Repocache, "", " ")
-	// if err != nil {
-	// 	return err
-	// }
-	// fmt.Printf("Repocache: %s", string(b))
-	// github.PrintCache()
-
 	return nil
 }

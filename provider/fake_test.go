@@ -132,7 +132,7 @@ func TestFakeProvider_CreateIssueComment(t *testing.T) {
 			f := &FakeProvider{
 				Repositories: tt.fields.Repositories,
 			}
-			if err := f.CreateIssueComment(tt.args.comment); (err != nil) != tt.wantErr {
+			if err := f.CreateIssueComment(tt.args.comment.IssueNum, tt.args.comment); (err != nil) != tt.wantErr {
 				t.Errorf("FakeProvider.CreateIssueComment() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

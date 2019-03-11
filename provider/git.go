@@ -24,34 +24,59 @@ package provider
 
 import (
 	"fmt"
+	"io/ioutil"
+	"net"
 	"os"
 	"strings"
 
 	"github.com/artur-sak13/gitmv/auth"
 
-	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 
 	"gopkg.in/src-d/go-billy.v4/memfs"
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/config"
-	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
+	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 	"gopkg.in/src-d/go-git.v4/storage/memory"
 )
 
 func MigrateWiki(repo *GitRepository, id *auth.ID) error {
 	fs := memfs.New()
+	storer := memory.NewStorage()
 
-	pks, err := ssh.NewPublicKeysFromFile("git", id.SSHKeyPath, "")
+	s := fmt.Sprintf("%s/.ssh/id_rsa", os.Getenv("HOME"))
+	key, err := ioutil.ReadFile(s)
 	if err != nil {
-		logrus.Errorf("unable to read private key: %v", err)
+		return fmt.Errorf("error reading private key: %v", err)
 	}
 
+	signer, err := ssh.ParsePrivateKey([]byte(key))
+	if err != nil {
+		return fmt.Errorf("error parsing private key: %v", err)
+	}
+	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		return nil
+	}
+
+	auth := &gitssh.PublicKeys{
+		User:   "git",
+		Signer: signer,
+		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+			HostKeyCallback: hostKeyCallback,
+		},
+	}
 	wikiURL := strings.TrimSuffix(repo.SSHURL, ".git") + ".wiki.git"
-	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
+
+	r, err := git.Clone(storer, fs, &git.CloneOptions{
 		URL:      wikiURL,
-		Auth:     pks,
+		Auth:     auth,
 		Progress: os.Stdout,
 	})
+
+	if err == transport.ErrEmptyRemoteRepository {
+		return nil
+	}
 
 	if err != nil {
 		return fmt.Errorf("error cloning repository %v", err)
@@ -72,13 +97,19 @@ func MigrateWiki(repo *GitRepository, id *auth.ID) error {
 		return fmt.Errorf("error creating remote repo %v", err)
 	}
 
+	refspec := config.RefSpec("+" + config.DefaultPushRefSpec)
 	err = r.Push(&git.PushOptions{
-		Auth:     pks,
+		Auth: auth,
+		RefSpecs: []config.RefSpec{
+			refspec,
+		},
 		Progress: os.Stdout,
 	})
 
 	if err != nil {
-		return fmt.Errorf("error could not push to remote repo %v", err)
+		fmt.Printf("Need to create wiki for: %s\n", newWikiURL)
+		fmt.Printf("returned error: %v\n", err)
+		return nil
 	}
 
 	return nil

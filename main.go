@@ -51,7 +51,6 @@ var (
 	githubToken string
 	gitlabToken string
 	gitlabUser  string
-	keyPath     string
 	customURL   string
 	org         string
 	debug       bool
@@ -77,7 +76,6 @@ func main() {
 	p.FlagSet.StringVar(&gitlabToken, "gitlab-token", os.Getenv("GITLAB_TOKEN"), "GitLab API token (or env var GITLAB_TOKEN)")
 	p.FlagSet.StringVar(&gitlabUser, "gitlab-user", os.Getenv("GITLAB_USER"), "GitLab Username")
 
-	p.FlagSet.StringVar(&keyPath, "ssh-key", os.Getenv("SSH_KEY"), "SSH private key path to push Wikis")
 	p.FlagSet.StringVar(&org, "org", os.Getenv("GHORG"), "GitHub org to move repositories")
 
 	p.FlagSet.StringVar(&customURL, "url", os.Getenv("GITLAB_URL"), "Custom GitLab URL")
@@ -130,8 +128,8 @@ func runCommand(ctx context.Context, cmd func(context.Context, provider.GitProvi
 		logrus.Fatalf("gops agent failed: %v", err)
 	}
 
-	glAuth := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
-	ghAuth := auth.NewAuthID("", githubToken, keyPath, org)
+	glAuth := auth.NewAuthID(customURL, gitlabToken, "")
+	ghAuth := auth.NewAuthID("", githubToken, org)
 
 	src, err := provider.NewGitlabProvider(glAuth)
 	if err != nil {
@@ -173,7 +171,7 @@ func runMigration(ctx context.Context, args []string) error {
 		logrus.Fatalf("gops agent failed: %v", err)
 	}
 
-	a := auth.NewAuthID(customURL, gitlabToken, keyPath, "")
+	a := auth.NewAuthID(customURL, gitlabToken, "")
 	src, err := provider.NewGitlabProvider(a)
 	if err != nil {
 		logrus.Fatalf("error initializing GitProvider: %v", err)
@@ -185,7 +183,7 @@ func runMigration(ctx context.Context, args []string) error {
 	if dryrun {
 		dest = provider.NewFakeProvider()
 	} else {
-		id := auth.NewAuthID("", githubToken, keyPath, org)
+		id := auth.NewAuthID("", githubToken, org)
 		dest, err = provider.NewGithubProvider(ctx, id)
 		if err != nil {
 			logrus.Fatalf("error initializing GitProvider: %v", err)
